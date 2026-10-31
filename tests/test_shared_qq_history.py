@@ -198,6 +198,8 @@ class SharedHistoryTests(unittest.IsolatedAsyncioTestCase):
         async def api(action, **params):
             self.calls.append(params)
             if "message_seq" not in params:
+                if params["count"] == 1:
+                    return {"messages": copy.deepcopy(self.records[-1:])}
                 return {
                     "messages": [copy.deepcopy(self.records[i]) for i in (0, 70, -1)]
                 }
@@ -302,18 +304,138 @@ class SharedHistoryTests(unittest.IsolatedAsyncioTestCase):
             ["Sent paragraph one", "Sent paragraph two"],
         )
 
-    async def test_deletion_and_policy_change_rebuild_shared_history(self):
+    async def test_cursor_deletion_and_policy_change_rebuild_shared_history(self):
         await self.manager.get_conversation(self.umo, "conversation")
-        self.records = [m for m in self.records if m["real_seq"] != "50"]
+        self.records = [m for m in self.records if m["real_seq"] != "129"]
         history = json.loads(
             (await self.manager.get_conversation(self.umo, "conversation")).history
         )
-        self.assertFalse(any(m["content"] == "message 50" for m in history))
+        self.assertFalse(any(m["content"] == "message 129" for m in history))
         self.policy["start_sequence"] = 60
         history = json.loads(
             (await self.manager.get_conversation(self.umo, "conversation")).history
         )
         self.assertEqual(history[0]["content"], "message 60")
+
+    async def test_unchanged_head_only_reads_one_record_without_writes(self):
+        first = await self.manager.get_conversation(self.umo, "conversation")
+        self.calls.clear()
+        with (
+            patch.object(
+                self.db, "update_conversation", wraps=self.db.update_conversation
+            ) as update,
+            patch.object(
+                self.db,
+                "insert_preference_or_update",
+                wraps=self.db.insert_preference_or_update,
+            ) as save,
+        ):
+            second = await self.manager.get_conversation(self.umo, "conversation")
+        self.assertEqual(second.history, first.history)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0]["count"], 1)
+        self.assertNotIn("message_seq", self.calls[0])
+        update.assert_not_awaited()
+        save.assert_not_awaited()
+
+    async def test_new_records_paginate_only_to_previous_cursor(self):
+        await self.manager.get_conversation(self.umo, "conversation")
+        self.records.extend(qq_record(i) for i in range(130, 230))
+        self.calls.clear()
+        history = json.loads(
+            (await self.manager.get_conversation(self.umo, "conversation")).history
+        )
+        self.assertEqual(
+            [m["content"] for m in history], [f"message {i}" for i in range(40, 230)]
+        )
+        self.assertEqual(len(self.calls), 4)
+        self.assertEqual([c["count"] for c in self.calls], [1, 100, 100, 100])
+        self.assertEqual(self.db.state["last_record"]["sequence"], 229)
+
+    async def test_cursor_persists_across_restart_and_short_id_changes(self):
+        first = await self.manager.get_conversation(self.umo, "conversation")
+        self.manager.shared_history = SharedQQHistory(self.context)
+        self.records[-1]["message_id"] = 999999
+        self.calls.clear()
+        second = await self.manager.get_conversation(self.umo, "conversation")
+        self.assertEqual(first.history, second.history)
+        self.assertEqual(len(self.calls), 1)
+
+    async def test_new_message_with_same_text_is_not_skipped(self):
+        await self.manager.get_conversation(self.umo, "conversation")
+        self.records.append(qq_record(130, "message 129"))
+        history = json.loads(
+            (await self.manager.get_conversation(self.umo, "conversation")).history
+        )
+        self.assertEqual(len(history), 91)
+        self.assertEqual([m["content"] for m in history[-2:]], ["message 129"] * 2)
+
+    async def test_empty_records_advance_cursor_without_changing_context(self):
+        first = await self.manager.get_conversation(self.umo, "conversation")
+        self.records.append(qq_record(130, parts=[]))
+        second = await self.manager.get_conversation(self.umo, "conversation")
+        self.assertEqual(first.history, second.history)
+        self.assertEqual(self.db.state["last_record"]["sequence"], 130)
+        self.calls.clear()
+        await self.manager.get_conversation(self.umo, "conversation")
+        self.assertEqual(len(self.calls), 1)
+
+    async def test_older_edits_are_not_rescanned_when_head_matches(self):
+        first = await self.manager.get_conversation(self.umo, "conversation")
+        self.records = [m for m in self.records if m["real_seq"] != "50"]
+        self.calls.clear()
+        second = await self.manager.get_conversation(self.umo, "conversation")
+        self.assertEqual(first.history, second.history)
+        self.assertEqual(len(self.calls), 1)
+
+    async def test_changed_cursor_reconciles_history(self):
+        await self.manager.get_conversation(self.umo, "conversation")
+        self.records[-1]["message"][0]["data"]["text"] = "edited last record"
+        history = json.loads(
+            (await self.manager.get_conversation(self.umo, "conversation")).history
+        )
+        self.assertEqual(len(history), 90)
+        self.assertEqual(history[-1]["content"], "edited last record")
+
+    async def test_current_message_is_not_committed_as_synced_until_included(self):
+        await self.manager.get_conversation(self.umo, "conversation")
+        self.records.append(qq_record(130))
+        for _ in range(2):
+            history = json.loads(
+                (
+                    await self.manager.get_conversation(
+                        self.umo, "conversation", before_message_id=str(130 * 7)
+                    )
+                ).history
+            )
+            self.assertEqual(history[-1]["content"], "message 129")
+            self.assertEqual(self.db.state["last_record"]["sequence"], 129)
+        history = json.loads(
+            (await self.manager.get_conversation(self.umo, "conversation")).history
+        )
+        self.assertEqual(sum(m["content"] == "message 130" for m in history), 1)
+        self.assertEqual(self.db.state["last_record"]["sequence"], 130)
+
+    async def test_legacy_sync_state_upgrades_without_replacing_summary(self):
+        self.provider.provider_config["max_context_tokens"] = 10000
+        self.records = [qq_record(i, "文" * 300) for i in range(1, 130)]
+        first = await self.manager.get_conversation(self.umo, "conversation")
+        self.db.state.pop("last_record")
+        calls = self.provider.text_chat.await_count
+        second = await self.manager.get_conversation(self.umo, "conversation")
+        self.assertEqual(first.history, second.history)
+        self.assertEqual(calls, self.provider.text_chat.await_count)
+        self.assertEqual(self.db.state["last_record"]["sequence"], 129)
+
+    async def test_failed_incremental_fetch_does_not_advance_cursor(self):
+        await self.manager.get_conversation(self.umo, "conversation")
+        original = copy.deepcopy(self.db.state)
+        self.platform.get_client().call_action.side_effect = TimeoutError(
+            "QQ unavailable"
+        )
+        with self.assertRaises(TimeoutError):
+            await self.manager.get_conversation(self.umo, "conversation")
+        self.assertEqual(self.db.state, original)
 
     async def test_saved_summary_is_reused_and_new_records_append(self):
         self.provider.provider_config["max_context_tokens"] = 10000

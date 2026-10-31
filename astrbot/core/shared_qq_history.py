@@ -37,14 +37,19 @@ class SharedQQHistory:
         )
 
     async def read_records(
-        self, session_id: str, policy: dict, before_message_id: str | None = None
+        self,
+        session_id: str,
+        policy: dict,
+        before_message_id: str | None = None,
+        after_sequence: int | None = None,
     ) -> list[dict]:
-        """Read contiguous QQ history within the configured source boundary.
+        """Probe the newest record and read backwards only to the saved cursor.
 
         Args:
             session_id: QQ private session origin.
             policy: Inclusive first sequence to retain.
             before_message_id: Exclude an incoming turn and any later messages.
+            after_sequence: Inclusive saved cursor, or None for initial import.
 
         Returns:
             Chronological QQ records without overlapping-page duplicates.
@@ -59,13 +64,14 @@ class SharedQQHistory:
             raise ValueError("Shared QQ history requires an aiocqhttp private session")
         client = platform.get_client()
         first_sequence = int(policy.get("start_sequence", 0))
+        stop_sequence = max(first_sequence, after_sequence or 0)
         records: dict[str, dict] = {}
         cursor = ""
         visited: set[str] = set()
         while True:
             params = {
                 "user_id": int(user_id),
-                "count": 100,
+                "count": 100 if cursor else 1,
                 "reverse_order": True,
                 "disable_get_url": True,
                 "parse_mult_msg": False,
@@ -88,15 +94,17 @@ class SharedQQHistory:
             page.sort(
                 key=lambda m: (int(m.get("time") or 0), int(m.get("real_seq") or 0))
             )
+            if not cursor:
+                # Some adapters return cached extras even for count=1. Only the
+                # latest record is a reliable starting point for pagination.
+                page = page[-1:]
             for message in page:
                 sequence = int(message.get("real_seq") or 0)
                 if sequence >= first_sequence:
                     # NapCat short IDs can change; QQ sequence is stable within a chat.
                     key = str(sequence or message["message_id"])
                     records[key] = message
-            # The first-view response can contain isolated records across gaps.
-            # Start the contiguous scan at its newest record before moving back.
-            if cursor and int(page[0].get("real_seq") or 0) <= first_sequence:
+            if int(page[0].get("real_seq") or 0) <= stop_sequence:
                 break
             next_cursor = str(page[0 if cursor else -1]["message_id"])
             if next_cursor == cursor or next_cursor in visited:
@@ -174,6 +182,22 @@ class SharedQQHistory:
             history.append(entry)
         return history, fingerprints
 
+    def record_cursor(self, record: dict) -> dict:
+        """Identify a source position independently of QQ's temporary short IDs.
+
+        Args:
+            record: Last imported QQ record, including records without text.
+
+        Returns:
+            Stable sequence, timestamp and normalized content fingerprint.
+        """
+        _, fingerprints = self.normalize_records([record])
+        return {
+            "sequence": int(record.get("real_seq") or 0),
+            "time": int(record.get("time") or 0),
+            "fingerprints": fingerprints,
+        }
+
     async def synchronize(
         self, session_id: str, conversation: Any, before_message_id: str | None = None
     ) -> Any:
@@ -194,8 +218,6 @@ class SharedQQHistory:
         async with self.locks.setdefault(cid, asyncio.Lock()):
             db = self.context.conversation_manager.db
             conversation = await db.get_conversation_by_id(cid=cid)
-            records = await self.read_records(session_id, policy, before_message_id)
-            history, fingerprints = self.normalize_records(records)
             preference = await db.get_preference(
                 "conversation", cid, "shared_qq_history"
             )
@@ -208,17 +230,52 @@ class SharedQQHistory:
                 state.get("history_digest") == digest and state.get("policy") == policy
             )
             previous = state.get("fingerprints", []) if valid else []
-            if valid and previous == fingerprints:
-                return conversation
-            if valid and fingerprints[: len(previous)] == previous:
-                history = [*current, *history[len(previous) :]]
-            # A source deletion/edit invalidates old summaries and rebuilds from
-            # retained QQ records, so removed material cannot survive in a summary.
-            provider = await self.context.get_using_provider_async(umo=session_id)
-            req = ProviderRequest(prompt="", contexts=history, system_prompt="")
-            await prepare_request_context(self.context, session_id, provider, req)
-            history = req.contexts
-            await db.update_conversation(cid=cid, content=history, token_usage=0)
+            last_record = state.get("last_record") if valid else None
+            records = await self.read_records(
+                session_id,
+                policy,
+                before_message_id,
+                after_sequence=last_record["sequence"] if last_record else None,
+            )
+            if last_record:
+                anchor = next(
+                    (
+                        record
+                        for record in records
+                        if int(record.get("real_seq") or 0) == last_record["sequence"]
+                    ),
+                    None,
+                )
+                if anchor and self.record_cursor(anchor) == last_record:
+                    records = [
+                        record
+                        for record in records
+                        if int(record.get("real_seq") or 0) > last_record["sequence"]
+                    ]
+                    if not records:
+                        return conversation
+                    history, fingerprints = self.normalize_records(records)
+                    history = [*current, *history]
+                    fingerprints = [*previous, *fingerprints]
+                else:
+                    # A removed/changed cursor or an older incoming request
+                    # needs reconciliation. Older edits are not polled on each
+                    # turn: the normal path only checks the newest QQ record.
+                    records = await self.read_records(
+                        session_id, policy, before_message_id
+                    )
+                    history, fingerprints = self.normalize_records(records)
+            else:
+                history, fingerprints = self.normalize_records(records)
+                # Upgrade the previous full-scan state without losing a summary.
+                if valid and fingerprints[: len(previous)] == previous:
+                    history = [*current, *history[len(previous) :]]
+            if history != current:
+                provider = await self.context.get_using_provider_async(umo=session_id)
+                req = ProviderRequest(prompt="", contexts=history, system_prompt="")
+                await prepare_request_context(self.context, session_id, provider, req)
+                history = req.contexts
+                await db.update_conversation(cid=cid, content=history, token_usage=0)
             await db.insert_preference_or_update(
                 "conversation",
                 cid,
@@ -226,6 +283,7 @@ class SharedQQHistory:
                 {
                     "policy": policy,
                     "fingerprints": fingerprints,
+                    "last_record": self.record_cursor(records[-1]) if records else None,
                     "history_digest": hashlib.sha256(
                         json.dumps(history, sort_keys=True).encode()
                     ).hexdigest(),
