@@ -324,10 +324,16 @@ async def _get_session_conv(
     cid = await conv_mgr.get_curr_conversation_id(umo)
     if not cid:
         cid = await conv_mgr.new_conversation(umo, event.get_platform_id())
-    conversation = await conv_mgr.get_conversation(umo, cid)
+    history_options = {}
+    if (
+        getattr(conv_mgr, "shared_history", None) is not None
+        and conv_mgr.shared_history.settings(umo) is not None
+    ):
+        history_options["before_message_id"] = str(event.message_obj.message_id)
+    conversation = await conv_mgr.get_conversation(umo, cid, **history_options)
     if not conversation:
         cid = await conv_mgr.new_conversation(umo, event.get_platform_id())
-        conversation = await conv_mgr.get_conversation(umo, cid)
+        conversation = await conv_mgr.get_conversation(umo, cid, **history_options)
     if not conversation:
         raise RuntimeError("无法创建新的对话。")
     return conversation
@@ -1506,10 +1512,21 @@ async def collect_initial_request(
                 # Handler requests can be prepared before the pipeline acquires
                 # the session lock. Reload the bound conversation here so queued
                 # turns include replies saved while they were waiting.
-                conversation = (
-                    await plugin_context.conversation_manager.get_conversation(
-                        event.unified_msg_origin, req.conversation.cid
-                    )
+                conversation = await plugin_context.conversation_manager.get_conversation(
+                    event.unified_msg_origin,
+                    req.conversation.cid,
+                    **(
+                        {"before_message_id": str(event.message_obj.message_id)}
+                        if getattr(
+                            plugin_context.conversation_manager, "shared_history", None
+                        )
+                        is not None
+                        and plugin_context.conversation_manager.shared_history.settings(
+                            event.unified_msg_origin
+                        )
+                        is not None
+                        else {}
+                    ),
                 )
                 if conversation is None:
                     event.set_extra(
@@ -1998,6 +2015,17 @@ async def build_main_agent(
         captioned_refs=captioned_refs,
         supports_image=_provider_supports_modality(provider, "image"),
     )
+
+    shared_history = getattr(
+        plugin_context.conversation_manager, "shared_history", None
+    )
+    if (
+        shared_history is not None
+        and shared_history.settings(event.unified_msg_origin) is not None
+    ):
+        await plugin_context.prepare_session_request(
+            event.unified_msg_origin, provider, req
+        )
 
     reset_coro = agent_runner.reset(
         provider=provider,

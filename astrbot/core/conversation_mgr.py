@@ -23,6 +23,7 @@ class ConversationManager:
         self.session_conversations: dict[str, str] = {}
         self.db = db_helper
         self.save_interval = 60  # 每 60 秒保存一次
+        self.shared_history = None
 
         # 会话删除回调函数列表（用于级联清理，如知识库配置）
         self._on_session_deleted_callbacks: list[Callable[[str], Awaitable[None]]] = []
@@ -192,6 +193,7 @@ class ConversationManager:
         unified_msg_origin: str,
         conversation_id: str,
         create_if_not_exists: bool = False,
+        before_message_id: str | None = None,
     ) -> Conversation | None:
         """获取会话的对话.
 
@@ -199,6 +201,7 @@ class ConversationManager:
             unified_msg_origin (str): 统一的消息来源字符串。格式为 platform_name:message_type:session_id
             conversation_id (str): 对话 ID, 是 uuid 格式的字符串
             create_if_not_exists (bool): 如果对话不存在,是否创建一个新的对话
+            before_message_id: Exclude this incoming QQ message and later records.
         Returns:
             conversation (Conversation): 对话对象
 
@@ -210,6 +213,10 @@ class ConversationManager:
             conv = await self.db.get_conversation_by_id(cid=conversation_id)
         conv_res = None
         if conv:
+            if self.shared_history is not None:
+                conv = await self.shared_history.synchronize(
+                    unified_msg_origin, conv, before_message_id
+                )
             conv_res = self._convert_conv_from_v2_to_v1(conv)
         return conv_res
 
@@ -298,6 +305,14 @@ class ConversationManager:
             # 如果没有提供 conversation_id，则获取当前的
             conversation_id = await self.get_curr_conversation_id(unified_msg_origin)
         if conversation_id:
+            if (
+                self.shared_history is not None
+                and self.shared_history.settings(unified_msg_origin) is not None
+            ):
+                # QQ is authoritative: generated prompts and unsent replies are
+                # not source messages. Sent replies arrive through synchronization.
+                history = None
+                token_usage = None
             await self.db.update_conversation(
                 cid=conversation_id,
                 title=title,
@@ -373,6 +388,12 @@ class ConversationManager:
         conv = await self.db.get_conversation_by_id(cid=cid)
         if not conv:
             raise Exception(f"Conversation with id {cid} not found")
+        if (
+            self.shared_history is not None
+            and self.shared_history.settings(conv.user_id) is not None
+        ):
+            await self.shared_history.synchronize(conv.user_id, conv)
+            return
         history = conv.content or []
         if isinstance(user_message, UserMessageSegment):
             user_msg_dict = user_message.model_dump()

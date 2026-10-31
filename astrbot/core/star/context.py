@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from asyncio import Queue
 from collections.abc import Awaitable, Callable
@@ -40,6 +41,8 @@ from astrbot.core.provider.provider import (
     STTProvider,
     TTSProvider,
 )
+from astrbot.core.session_context import prepare_request_context
+from astrbot.core.shared_qq_history import SharedQQHistory
 from astrbot.core.star.filter.platform_adapter_type import (
     ADAPTER_NAME_2_TYPE,
     PlatformAdapterType,
@@ -180,6 +183,26 @@ class Context:
         self.subagent_orchestrator = subagent_orchestrator
         self.decision = DecisionService(provider_manager)
         """Decision service backed by the configured decision provider."""
+        self.conversation_manager.shared_history = SharedQQHistory(self)
+
+    async def prepare_session_request(
+        self,
+        session_id: str,
+        provider: Provider,
+        request: ProviderRequest,
+        response_instruction: str = "",
+    ) -> None:
+        """Apply native session length management to a plugin or ordinary request.
+
+        Args:
+            session_id: Unified session origin.
+            provider: Selected chat provider.
+            request: Request to prepare in place.
+            response_instruction: Optional final output protocol.
+        """
+        await prepare_request_context(
+            self, session_id, provider, request, response_instruction
+        )
 
     async def llm_generate(
         self,
@@ -205,7 +228,9 @@ class Context:
             tools: ToolSet of tools available to the LLM
             system_prompt: System prompt to guide the LLM's behavior, if provided, it will always insert as the first system message in the context
             contexts: context messages for the LLM
-            **kwargs: Additional keyword arguments for LLM generation, OpenAI compatible
+            **kwargs: Additional provider arguments. For a shared-history session,
+                session_id loads its history when contexts is omitted and applies
+                that session's native length policy.
 
         Raises:
             ChatProviderNotFoundError: If the specified chat provider ID is not found
@@ -214,6 +239,35 @@ class Context:
         prov = await self.provider_manager.get_provider_by_id(chat_provider_id)
         if not prov or not isinstance(prov, Provider):
             raise ProviderNotFoundError(f"Provider {chat_provider_id} not found")
+        session_id = kwargs.get("session_id")
+        if (
+            session_id
+            and self.conversation_manager.shared_history.settings(session_id)
+            is not None
+        ):
+            kwargs.pop("session_id", None)
+            if contexts is None:
+                cid = await self.conversation_manager.get_curr_conversation_id(
+                    session_id
+                )
+                if not cid:
+                    cid = await self.conversation_manager.new_conversation(session_id)
+                conversation = await self.conversation_manager.get_conversation(
+                    session_id, cid
+                )
+                contexts = json.loads(conversation.history)
+            request = ProviderRequest(
+                prompt=prompt,
+                image_urls=image_urls or [],
+                audio_urls=audio_urls or [],
+                contexts=contexts,
+                system_prompt=system_prompt or "",
+                func_tool=tools,
+                extra_user_content_parts=kwargs.pop("extra_user_content_parts", []),
+            )
+            await self.prepare_session_request(session_id, prov, request)
+            contexts = request.contexts
+            kwargs["extra_user_content_parts"] = request.extra_user_content_parts
         llm_resp = await prov.text_chat(
             prompt=prompt,
             image_urls=image_urls,

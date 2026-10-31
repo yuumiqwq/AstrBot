@@ -1,0 +1,131 @@
+"""Shared session context processing for ordinary turns and plugin requests."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from astrbot.core.agent.context.config import ContextConfig
+from astrbot.core.agent.context.manager import ContextManager
+from astrbot.core.agent.context.round_utils import split_into_rounds
+from astrbot.core.agent.message import (
+    CheckpointMessageSegment,
+    Message,
+    TextPart,
+    bind_checkpoint_messages,
+)
+from astrbot.core.config.agent_runner import resolve_context_compression_config
+from astrbot.core.utils.llm_metadata import LLM_METADATAS
+
+
+async def make_context_manager(context: Any, session_id: str, provider: Any):
+    """Resolve the same session settings used by the main agent.
+
+    Args:
+        context: AstrBot service context.
+        session_id: Session whose compression settings apply.
+        provider: Chat provider used by the request.
+
+    Returns:
+        Configured native context manager.
+    """
+    config = context.get_config(umo=session_id)
+    compression = (
+        config.get("agent_runner", {}).get("config", {}).get("compression", {})
+    )
+    options = resolve_context_compression_config(compression)
+    max_tokens = provider.provider_config.get("max_context_tokens", 0)
+    if max_tokens <= 0:
+        metadata = LLM_METADATAS.get(provider.get_model())
+        max_tokens = (
+            metadata["limit"]["context"]
+            if metadata
+            else options["fallback_max_context_tokens"]
+        )
+    compression_provider = None
+    if options["context_limit_reached_strategy"] == "llm_compress":
+        provider_id = options["llm_compress_provider_id"]
+        if provider_id:
+            compression_provider = context.get_provider_by_id(provider_id)
+        if compression_provider is None:
+            compression_provider = provider
+    return ContextManager(
+        ContextConfig(
+            max_context_tokens=max_tokens,
+            enforce_max_turns=options["max_context_length"],
+            truncate_turns=options["dequeue_context_length"],
+            llm_compress_instruction=options["llm_compress_instruction"],
+            llm_compress_keep_recent_ratio=options["llm_compress_keep_recent_ratio"],
+            llm_compress_provider=compression_provider,
+        )
+    )
+
+
+async def prepare_request_context(
+    context: Any,
+    session_id: str,
+    provider: Any,
+    req: Any,
+    response_instruction: str = "",
+):
+    """Manage a full request using AstrBot's native token and turn policies.
+
+    Args:
+        context: AstrBot service context.
+        session_id: Session whose compression settings apply.
+        provider: Chat provider used by the request.
+        req: Provider request to update in place.
+        response_instruction: Optional output protocol applied after summarization.
+
+    Raises:
+        ValueError: If the active request is removed by context processing.
+    """
+    manager = await make_context_manager(context, session_id, provider)
+    history = bind_checkpoint_messages(req.contexts or [])
+    current = Message.model_validate(await req.assemble_context())
+    # Count response protocol tokens without imposing that protocol on summaries.
+    if isinstance(current.content, str):
+        current.content = [TextPart(text=current.content)]
+    if response_instruction:
+        current.content.append(TextPart(text=response_instruction))
+    system = (
+        Message(role="system", content=req.system_prompt) if req.system_prompt else None
+    )
+    messages = [system] if system else []
+    counter = manager.token_counter
+    tokens = counter.count_tokens([*messages, current])
+    rounds = split_into_rounds(history)
+    for index, round_messages in enumerate(rounds):
+        messages.extend(round_messages)
+        tokens += counter.count_tokens(round_messages)
+        # Replaying a large QQ archive incrementally keeps summary requests near
+        # the native compression threshold, as during an ordinary conversation.
+        if index < len(rounds) - 1 and manager.compressor.should_compress(
+            messages, tokens, manager.config.max_context_tokens
+        ):
+            processed = await manager.process([*messages, current])
+            messages = [item for item in processed if item is not current]
+            tokens = counter.count_tokens([*messages, current])
+    processed = await manager.process([*messages, current])
+    if current not in processed:
+        raise ValueError("AstrBot context management removed the current request")
+    req.contexts = []
+    for message in processed:
+        if message is system or message is current:
+            continue
+        data = message.model_dump()
+        if isinstance(message.content, list):
+            data["content"] = [
+                part.model_dump_for_context() for part in message.content
+            ]
+        if message._no_save:
+            data["_no_save"] = True
+        req.contexts.append(data)
+        if message._checkpoint_after is not None:
+            req.contexts.append(
+                CheckpointMessageSegment(content=message._checkpoint_after).model_dump()
+            )
+
+    if response_instruction:
+        req.system_prompt = (
+            f"{req.system_prompt or ''}\n\n{response_instruction}".strip()
+        )

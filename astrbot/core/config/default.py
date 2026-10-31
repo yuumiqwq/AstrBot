@@ -88,6 +88,7 @@ WEBHOOK_SUPPORTED_PLATFORMS = [
 
 # 默认配置
 DEFAULT_CONFIG = {
+    "shared_qq_history": {"sessions": []},
     "config_version": 5,
     "platform_settings": {
         "unique_session": False,
