@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from astrbot.core.desktop_runtime import is_desktop_managed_backend
+from astrbot.dashboard.services.published_plugin_assets import PublishedPluginAssets
 from astrbot.dashboard.services.static_file_service import StaticFileService
 from astrbot.dashboard.static_encoding import (
     accepts_gzip,
@@ -18,6 +19,7 @@ from astrbot.dashboard.static_encoding import (
 
 router = APIRouter(include_in_schema=False)
 service = StaticFileService()
+published_assets = PublishedPluginAssets()
 
 
 def _static_folder(request: Request) -> str | None:
@@ -105,6 +107,34 @@ async def serve_static_file(request: Request, static_path: str):
     ):
         headers["Clear-Site-Data"] = '"cache"'
     return await _file_response(request, file_path, headers)
+
+
+@router.get("/fish-static/{release}/{asset_path:path}")
+async def serve_published_plugin_asset(request: Request, release: str, asset_path: str):
+    """Serve the local fallback for assets also mirrored by the cloud proxy.
+
+    Args:
+        request: Incoming browser asset request.
+        release: Immutable snapshot SHA-256.
+        asset_path: File path inside the published snapshot.
+
+    Returns:
+        Public cacheable static content, or a non-cacheable 404 response.
+    """
+    file_path = published_assets.resolve_file(release, asset_path)
+    if file_path is None:
+        return _not_found_response()
+    return await _file_response(
+        request,
+        file_path,
+        {
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Access-Control-Allow-Origin": "*",
+            "Cross-Origin-Resource-Policy": "cross-origin",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+        },
+    )
 
 
 for index_route in service.list_index_routes():

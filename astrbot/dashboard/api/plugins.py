@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 import jwt
 from fastapi import APIRouter, Body, Depends, Query, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import PlainTextResponse, RedirectResponse, Response
 
 from astrbot.api.web import PluginRequest, bind_request_context
 from astrbot.core import logger
@@ -297,6 +297,12 @@ def _plugin_page_error_response(status_code: int, message: str):
 
 
 def _plugin_page_payload_response(payload: PluginPageContentPayload):
+    if payload.redirect_url:
+        return RedirectResponse(
+            payload.redirect_url,
+            status_code=307,
+            headers=PluginPageService.build_security_headers(),
+        )
     return Response(
         content=payload.content,
         media_type=payload.content_type,

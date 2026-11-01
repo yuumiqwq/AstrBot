@@ -19,6 +19,7 @@ from astrbot.core.config.astrbot_config import AstrBotConfig
 from astrbot.core.core_lifecycle import AstrBotCoreLifecycle
 from astrbot.core.star.star import StarMetadata
 from astrbot.core.star.star_manager import PluginManager
+from astrbot.dashboard.services.published_plugin_assets import PublishedPluginAssets
 
 PLUGIN_PAGE_ASSET_TOKEN_TYPE = "plugin_page_asset"
 # Aligned with the dashboard session lifetime (7 days): a plugin view
@@ -49,6 +50,7 @@ class PluginPage:
 class PluginPageContentPayload:
     content: str | bytes
     content_type: str
+    redirect_url: str | None = None
 
 
 class PluginPageServiceError(Exception):
@@ -76,6 +78,7 @@ class PluginPageService:
             core_lifecycle.astrbot_config if core_lifecycle is not None else None
         )
         self.bridge_file = PLUGIN_PAGE_BRIDGE_FILE
+        self.published_assets = PublishedPluginAssets()
 
     def _jwt_secret(self) -> str | None:
         if self.config is None:
@@ -376,6 +379,9 @@ class PluginPageService:
         suffix = file_path.suffix.lower()
         if suffix == ".html":
             html_text = await self.read_plugin_page_text(file_path)
+            html_text = self.published_assets.rewrite_html(
+                html_text, plugin_name, page.name, asset_path
+            )
             return PluginPageContentPayload(
                 content=self.process_plugin_page_html(
                     html_text,
@@ -383,6 +389,15 @@ class PluginPageService:
                     extra_query_params=extra_query_params,
                 ),
                 content_type="text/html; charset=utf-8",
+            )
+        published_url = self.published_assets.asset_url(
+            plugin_name, page.name, asset_path
+        )
+        if published_url:
+            return PluginPageContentPayload(
+                content="",
+                content_type=self.guess_plugin_page_mime_type(file_path),
+                redirect_url=published_url,
             )
         if suffix in {".css", ".js", ".mjs"}:
             return PluginPageContentPayload(
