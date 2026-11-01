@@ -1220,6 +1220,7 @@ async def get_plugin_view_token_asset(
             username=username,
             locale=_get_request_locale(request),
             theme=_get_request_theme(request),
+            parent_origin=request.query_params.get("parent_origin"),
         )
     except PluginPageServiceError as exc:
         return _plugin_page_error_response(exc.status_code, exc.public_message)

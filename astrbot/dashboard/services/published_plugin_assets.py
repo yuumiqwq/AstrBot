@@ -135,6 +135,51 @@ class PublishedPluginAssets:
         encoded = "/".join(quote(part, safe="") for part in asset_path.split("/"))
         return f"/fish-static/{release}/{encoded}"
 
+    def frame_policy(self, plugin_name: str, view_name: str) -> dict:
+        """Return explicitly configured origins for an isolated view document.
+
+        Args:
+            plugin_name: Registered plugin name.
+            view_name: Registered view name.
+
+        Returns:
+            HTTPS document origin and exact parent origins, or an empty mapping.
+        """
+        entry = self.view_release(plugin_name, view_name)
+        document_origin = entry.get("document_origin")
+        parent_origins = entry.get("parent_origins")
+        if not isinstance(document_origin, str) or not isinstance(parent_origins, list):
+            return {}
+        origins = [document_origin, *parent_origins]
+        if not parent_origins:
+            return {}
+        for origin in origins:
+            if not isinstance(origin, str):
+                return {}
+            try:
+                parsed = urlsplit(origin)
+                port = parsed.port
+            except ValueError:
+                return {}
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+                or "*" in parsed.netloc
+                or (port is not None and not 1 <= port <= 65535)
+            ):
+                return {}
+        if document_origin in parent_origins:
+            return {}
+        return {
+            "document_origin": document_origin,
+            "parent_origins": parent_origins.copy(),
+        }
+
     def rewrite_html(
         self,
         content: str,

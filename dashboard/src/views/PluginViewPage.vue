@@ -7,6 +7,7 @@ import { fetchWithAuth } from "@/api/http";
 import { useModuleI18n } from "@/i18n/composables";
 import { usePluginI18n } from "@/utils/pluginI18n";
 import { useCustomizerStore } from "@/stores/customizer";
+import { isPluginFrameMessage, resolvePluginFrame } from "@/utils/pluginViewOrigin.mjs";
 
 const BRIDGE_CHANNEL = "astrbot-plugin-page";
 
@@ -25,9 +26,9 @@ const plugin = ref(null);
 const page = ref(null);
 const iframeSrc = ref("");
 const iframeRef = ref(null);
+const iframeSandbox = ref("allow-scripts allow-forms allow-downloads");
 const sseConnections = new Map();
-const BRIDGE_TARGET_ORIGIN = window.location.origin;
-let iframeMessageOrigin = null;
+let iframeExpectedOrigin = "null";
 
 const pluginName = computed(() => String(route.params.pluginName || ""));
 const pageName = computed(() => String(route.params.pageName || ""));
@@ -61,10 +62,7 @@ const postToIframe = (payload) => {
   if (!iframeWindow) {
     return;
   }
-  const targetOrigin =
-    typeof iframeMessageOrigin === "string" && iframeMessageOrigin !== "null"
-      ? iframeMessageOrigin
-      : "*";
+  const targetOrigin = iframeExpectedOrigin === "null" ? "*" : iframeExpectedOrigin;
   iframeWindow.postMessage(
     { channel: BRIDGE_CHANNEL, ...payload },
     targetOrigin,
@@ -521,16 +519,9 @@ const handleBridgeRequest = async (message) => {
 
 const handleWindowMessage = (event) => {
   const iframeWindow = getIframeWindow();
-  if (!iframeWindow || event.source !== iframeWindow) {
+  if (!isPluginFrameMessage(event, iframeWindow, iframeExpectedOrigin)) {
     return;
   }
-  if (event.origin !== BRIDGE_TARGET_ORIGIN && event.origin !== "null") {
-    return;
-  }
-  if (iframeMessageOrigin && event.origin !== iframeMessageOrigin) {
-    return;
-  }
-  iframeMessageOrigin = event.origin;
 
   const message = event.data;
   if (!message || message.channel !== BRIDGE_CHANNEL) {
@@ -557,7 +548,8 @@ const loadPluginView = async () => {
   plugin.value = null;
   page.value = null;
   iframeSrc.value = "";
-  iframeMessageOrigin = null;
+  iframeExpectedOrigin = "null";
+  iframeSandbox.value = "allow-scripts allow-forms allow-downloads";
   cleanupSSEConnections();
 
   try {
@@ -598,9 +590,12 @@ const loadPluginView = async () => {
 
     plugin.value = pluginData;
     page.value = pageEntry;
-    const contentUrl = new URL(pageEntry.content_path, window.location.origin);
+    const frame = resolvePluginFrame(pageEntry, window.location.origin);
+    const contentUrl = new URL(frame.src);
     contentUrl.searchParams.set('theme', themeParam.value);
-    iframeSrc.value = contentUrl.pathname + contentUrl.search + contentUrl.hash;
+    iframeExpectedOrigin = frame.expectedOrigin;
+    iframeSandbox.value = frame.sandbox;
+    iframeSrc.value = contentUrl.href;
   } catch (error) {
     errorMessage.value =
       error?.response?.data?.message ||
@@ -648,7 +643,7 @@ watch(() => customizer.uiTheme, () => {
       :src="iframeSrc"
       class="plugin-view-frame"
       referrerpolicy="no-referrer"
-      sandbox="allow-scripts allow-forms allow-downloads"
+      :sandbox="iframeSandbox"
       @load="handleIframeLoad"
     ></iframe>
   </div>

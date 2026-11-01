@@ -1,6 +1,9 @@
 (function attachAstrBotPluginPageBridge() {
   const CHANNEL = "astrbot-plugin-page";
   const SELF_ORIGIN = window.location.origin;
+  const configuredParent = document.querySelector(
+    'meta[name="astrbot-plugin-parent-origin"]',
+  )?.content;
   const pendingRequests = new Map();
   const sseHandlers = new Map();
   const contextHandlers = new Set();
@@ -8,6 +11,16 @@
   let subscriptionCounter = 0;
   let context = null;
   let parentOrigin = null;
+  if (typeof configuredParent === "string") {
+    try {
+      const parsed = new URL(configuredParent);
+      if (parsed.protocol === "https:" && parsed.origin === configuredParent) {
+        parentOrigin = configuredParent;
+      }
+    } catch {
+      // An absent or malformed deployment hint keeps the same-origin bridge.
+    }
+  }
   let resolveReady;
   const readyPromise = new Promise((resolve) => {
     resolveReady = resolve;
@@ -150,13 +163,12 @@
     if (!isAllowedParentOrigin(event.origin)) {
       return;
     }
-    if (!parentOrigin) {
-      parentOrigin = event.origin;
-    }
-
     const message = event.data;
     if (!message || message.channel !== CHANNEL) {
       return;
+    }
+    if (!parentOrigin) {
+      parentOrigin = event.origin;
     }
 
     if (message.kind === "context") {

@@ -70,6 +70,24 @@ class PublishedAssetsTests(unittest.IsolatedAsyncioTestCase):
         actual = self.assets.rewrite_html(source, "example", "house", "")
         self.assertIn('src="private.png"', actual)
 
+    def test_isolated_frame_policy_requires_exact_separate_https_origins(self):
+        policy = self.manifest["views"]["example/house"]
+        for document_origin, parents, valid in (
+            ("https://11tiger.work:6186", ["https://11tiger.work:6185"], True),
+            ("https://11tiger.work:6185", ["https://11tiger.work:6185"], False),
+            ("https://11tiger.work:6186/path", ["https://11tiger.work:6185"], False),
+            ("https://11tiger.work:6186", ["*"], False),
+            (
+                "https://user:pass@11tiger.work:6186",
+                ["https://11tiger.work:6185"],
+                False,
+            ),
+            ("http://11tiger.work:6186", ["https://11tiger.work:6185"], False),
+        ):
+            policy.update(document_origin=document_origin, parent_origins=parents)
+            (self.root / "manifest.json").write_text(json.dumps(self.manifest))
+            self.assertEqual(bool(self.assets.frame_policy("example", "house")), valid)
+
     def test_missing_or_invalid_manifest_retains_original_delivery(self):
         source = '<script src="app.js"></script>'
         manifest = self.root / "manifest.json"
@@ -180,6 +198,72 @@ class PublishedAssetsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("asset_token=token", payload.content)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertIsNone(payload.redirect_url)
+
+    async def test_only_allowlisted_parent_origin_is_injected_into_authenticated_html(
+        self,
+    ):
+        self.manifest["views"]["example/house"].update(
+            document_origin="https://11tiger.work:6186",
+            parent_origins=["https://11tiger.work:6185"],
+        )
+        (self.root / "manifest.json").write_text(json.dumps(self.manifest))
+        html_file = self.root / "index.html"
+        html_file.write_text(
+            '<html><head><meta name="astrbot-plugin-parent-origin" content="https://evil.example">'
+            '</head><body><script src="app.js"></script></body></html>'
+        )
+        service = PluginPageService.__new__(PluginPageService)
+        service.published_assets = self.assets
+        service.get_plugin_metadata_by_name = Mock(
+            return_value=SimpleNamespace(activated=True)
+        )
+        service.get_plugin_page = AsyncMock(return_value=PluginPage("house", "House"))
+        service.resolve_plugin_page_file = AsyncMock(return_value=html_file)
+        for parent_origin in (
+            "https://11tiger.work:6185",
+            "https://evil.example",
+            None,
+        ):
+            payload = await service.serve_page_content(
+                plugin_name="example",
+                view_name="house",
+                asset_path="",
+                asset_token="token",
+                username="admin",
+                locale="en-US",
+                theme="dark",
+                parent_origin=parent_origin,
+            )
+            self.assertNotIn("https://evil.example", payload.content)
+            self.assertEqual(
+                "astrbot-plugin-parent-origin" in payload.content,
+                parent_origin == "https://11tiger.work:6185",
+            )
+
+    async def test_page_entry_exposes_origins_without_replacing_token_path(self):
+        self.manifest["views"]["example/house"].update(
+            document_origin="https://11tiger.work:6186",
+            parent_origins=["https://11tiger.work:6185"],
+        )
+        (self.root / "manifest.json").write_text(json.dumps(self.manifest))
+        service = PluginPageService.__new__(PluginPageService)
+        service.published_assets = self.assets
+        service.get_plugin_page = AsyncMock(return_value=PluginPage("house", "House"))
+        service.resolve_plugin_page_file = AsyncMock(
+            return_value=self.root / "index.html"
+        )
+        entry = await service.serialize_plugin_page(
+            SimpleNamespace(name="example"),
+            "house",
+            include_content_path=True,
+            asset_token="signed-token",
+        )
+        self.assertEqual(entry["document_origin"], "https://11tiger.work:6186")
+        self.assertEqual(entry["parent_origins"], ["https://11tiger.work:6185"])
+        self.assertTrue(
+            entry["content_path"].startswith("/api/v1/plugins/example/views/house/_t/")
+        )
+        self.assertIn("signed-token", entry["content_path"])
 
     async def test_authenticated_old_asset_redirects_to_published_snapshot(self):
         service = PluginPageService.__new__(PluginPageService)

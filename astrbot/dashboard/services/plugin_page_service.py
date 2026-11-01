@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import mimetypes
 import os
@@ -347,6 +348,7 @@ class PluginPageService:
         username: str | None,
         locale: str,
         theme: str | None,
+        parent_origin: str | None = None,
     ) -> PluginPageContentPayload:
         plugin = self.get_plugin_metadata_by_name(plugin_name)
         if not plugin:
@@ -379,6 +381,26 @@ class PluginPageService:
         suffix = file_path.suffix.lower()
         if suffix == ".html":
             html_text = await self.read_plugin_page_text(file_path)
+            html_text = re.sub(
+                r'<meta\b[^>]*\bname\s*=\s*["\']astrbot-plugin-parent-origin["\'][^>]*>',
+                "",
+                html_text,
+                flags=re.IGNORECASE,
+            )
+            policy = self.published_assets.frame_policy(plugin_name, page.name)
+            if parent_origin and parent_origin in policy.get("parent_origins", []):
+                meta = (
+                    '<meta name="astrbot-plugin-parent-origin" content="'
+                    + html.escape(parent_origin, quote=True)
+                    + '">'
+                )
+                html_text = re.sub(
+                    r"(<head\b[^>]*>)",
+                    lambda match: match.group(0) + meta,
+                    html_text,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
             html_text = self.published_assets.rewrite_html(
                 html_text, plugin_name, page.name, asset_path
             )
@@ -680,6 +702,7 @@ class PluginPageService:
                 # from location.search.
                 + f"?asset_token={quote(asset_token, safe='')}"
             )
+            page_data.update(self.published_assets.frame_policy(plugin_name, page.name))
         return page_data
 
     async def serialize_plugin_pages(self, plugin: StarMetadata) -> list[dict]:
