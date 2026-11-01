@@ -1,4 +1,4 @@
-﻿{
+{
   "page": {
     "description": "Управление настройками и поведением персонажей"
   },
@@ -158,6 +158,29 @@
     "error": "Ошибка перемещения"
   },
   "review": {
+    "back": "К персоне",
+    "history": "История",
+    "processed": "Обработано",
+    "refresh": "Обновить",
+    "segments": "фрагментов",
+    "rounds": "обменов",
+    "round": "Обмен",
+    "segment": "Фрагмент",
+    "segmentTitle": "Название фрагмента",
+    "deleteSegment": "Удалить фрагмент",
+    "rangeStart": "Начало",
+    "rangeEnd": "Конец",
+    "selectRange": "Выбрать диапазон",
+    "selectPage": "Выбрать страницу",
+    "clearSelection": "Снять выбор",
+    "selectedMessages": "выбранных сообщений",
+    "addPending": "На проверку",
+    "removed": "Удалено",
+    "unsaved": "Изменения не сохранены. Покинуть страницу?",
+    "incompleteRange": "Каждый фрагмент должен заканчиваться ответом ассистента. Измените выбор.",
+    "savePresetsFirst": "Сохраните изменения примеров перед одобрением.",
+    "personaMissing": "Персона не найдена.",
+    "saveAndOpen": "Сохранить и открыть примеры",
     "title": "Review examples",
     "create": "New candidate",
     "persona": "Target persona",

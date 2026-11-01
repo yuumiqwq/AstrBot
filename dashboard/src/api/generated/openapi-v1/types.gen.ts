@@ -335,6 +335,8 @@ export type ExampleImport = {
     persona_id: string;
     conversation_id: string;
     context_rounds?: number;
+    revision?: (string | null);
+    ranges?: (Array<HistoryRange> | null);
 };
 
 export type FileUploadRequest = {
@@ -343,6 +345,11 @@ export type FileUploadRequest = {
 
 export type GhproxyTestRequest = {
     proxy_url: string;
+};
+
+export type HistoryRange = {
+    start: number;
+    end: number;
 };
 
 export type HTTPValidationError = {
@@ -523,6 +530,22 @@ export type ParameterUmo = string;
 
 export type ParameterWebhookUuid = string;
 
+export type PersonaByIdRequest = {
+    persona_id: string;
+    system_prompt?: (string | null);
+    begin_dialogs?: (Array<unknown> | null);
+    begin_dialog_segments?: (Array<{
+    [key: string]: unknown;
+}> | null);
+    preset_revision?: (string | null);
+    tools?: (Array<(string)> | null);
+    skills?: (Array<(string)> | null);
+    custom_error_message?: (string | null);
+    folder_id?: (string | null);
+    sort_order?: (number | null);
+    [key: string]: unknown | string;
+};
+
 export type PersonaFolderRequest = {
     name?: string;
     parent_id?: string;
@@ -537,14 +560,19 @@ export type PersonaMoveRequest = {
 };
 
 export type PersonaRequest = {
-    persona_id: string;
-    system_prompt: string;
-    begin_dialogs?: Array<(string)>;
-    folder_id?: string;
-    tools?: Array<(string)>;
-    skills?: Array<(string)>;
-    custom_error_message?: string;
-    [key: string]: unknown | string;
+    persona_id?: (string | null);
+    system_prompt?: (string | null);
+    begin_dialogs?: (Array<unknown> | null);
+    begin_dialog_segments?: (Array<{
+    [key: string]: unknown;
+}> | null);
+    preset_revision?: (string | null);
+    tools?: (Array<(string)> | null);
+    skills?: (Array<(string)> | null);
+    custom_error_message?: (string | null);
+    folder_id?: (string | null);
+    sort_order?: (number | null);
+    [key: string]: unknown;
 };
 
 export type PipInstallRequest = {
@@ -627,10 +655,25 @@ export type PluginVersionSupportRequest = {
     astrbot_version?: string;
 };
 
+export type PresetBudgetRequest = {
+    persona_id: string;
+    begin_dialogs: Array<(string)>;
+    segments?: (Array<PresetSegment> | null);
+};
+
+export type PresetSegment = {
+    id: string;
+    start_pair: number;
+    pair_count: number;
+    source_review_id?: (string | null);
+    source_title?: string;
+};
+
 export type PresetUpdate = {
     persona_id: string;
     revision: string;
     begin_dialogs: Array<(string)>;
+    segments?: (Array<PresetSegment> | null);
 };
 
 export type ProviderCapability = 'chat' | 'agent' | 'stt' | 'tts' | 'embedding' | 'rerank' | 'decision';
@@ -803,6 +846,24 @@ export type ValidationError = {
         [key: string]: unknown;
     };
 };
+
+export type EstimatePresetsApiV1PersonaExampleReviewsPresetsBudgetPostData = {
+    body: PresetBudgetRequest;
+};
+
+export type EstimatePresetsApiV1PersonaExampleReviewsPresetsBudgetPostResponse = (SuccessEnvelope);
+
+export type EstimatePresetsApiV1PersonaExampleReviewsPresetsBudgetPostError = (ErrorEnvelope | HTTPValidationError);
+
+export type GetSourceHistoryApiV1PersonaExampleReviewsHistoryGetData = {
+    query: {
+        conversation_id: string;
+    };
+};
+
+export type GetSourceHistoryApiV1PersonaExampleReviewsHistoryGetResponse = (SuccessEnvelope);
+
+export type GetSourceHistoryApiV1PersonaExampleReviewsHistoryGetError = (ErrorEnvelope | HTTPValidationError);
 
 export type LoginData = {
     body: LoginRequest;

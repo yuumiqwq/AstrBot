@@ -139,6 +139,12 @@
                 :persona="persona"
                 @view="viewPersona(persona)"
                 @edit="editPersona(persona)"
+                @presets="
+                  $router.push({
+                    name: 'PersonaPresets',
+                    params: { personaId: persona.persona_id },
+                  })
+                "
                 @move="openMovePersonaDialog(persona)"
                 @delete="confirmDeletePersona(persona)"
                 @export="handlePersonaExport"
@@ -602,6 +608,17 @@ export default defineComponent({
   },
   async mounted() {
     await this.initialize();
+    const personaId = this.$route.query.edit;
+    if (typeof personaId === "string") {
+      try {
+        const response = await personaApi.get(personaId);
+        const persona = response.data.data as Persona;
+        if (persona.folder_id) await this.navigateToFolder(persona.folder_id);
+        this.editPersona(persona);
+      } catch (error: any) {
+        this.showError(error.message || this.tm("messages.loadError"));
+      }
+    }
   },
   methods: {
     ...mapActions(usePersonaStore, [
@@ -812,6 +829,9 @@ export default defineComponent({
           persona_id: personaId,
           system_prompt: data.system_prompt,
           begin_dialogs: data.begin_dialogs || [],
+          ...(Array.isArray(data.begin_dialog_segments)
+            ? { begin_dialog_segments: data.begin_dialog_segments }
+            : {}),
           tools: null, // 默认使用所有工具
           skills: null, // 默认使用所有 Skills
           folder_id: this.currentFolderId,

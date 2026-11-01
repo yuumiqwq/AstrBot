@@ -35,6 +35,14 @@
             </template>
             <v-list-item-title>{{ tm("buttons.edit") }}</v-list-item-title>
           </v-list-item>
+          <v-list-item
+            @click.stop="$emit('presets')"
+            prepend-icon="mdi-chat-outline"
+          >
+            <v-list-item-title>{{
+              tm("form.presetDialogs")
+            }}</v-list-item-title>
+          </v-list-item>
           <v-list-item @click.stop="$emit('move')">
             <template v-slot:prepend>
               <v-icon size="small">mdi-folder-move</v-icon>
@@ -72,6 +80,7 @@
           variant="tonal"
           prepend-icon="mdi-chat-outline"
           class="persona-chip"
+          @click.stop="$emit('presets')"
         >
           {{
             tm("labels.presetDialogs", {
@@ -159,7 +168,7 @@ export default defineComponent({
       required: true,
     },
   },
-  emits: ["view", "edit", "move", "delete", "export"],
+  emits: ["view", "edit", "presets", "move", "delete", "export"],
   setup() {
     const { tm } = useModuleI18n("features/persona");
     const { tm: sharedTm } = useModuleI18n("core.shared");
@@ -219,11 +228,11 @@ export default defineComponent({
       if (!confirmed) return;
 
       try {
-        // 仅导出 persona_id, system_prompt, begin_dialogs
         const exportData = {
           persona_id: this.persona.persona_id,
           system_prompt: this.persona.system_prompt,
           begin_dialogs: this.persona.begin_dialogs || [],
+          begin_dialog_segments: this.persona.begin_dialog_segments || [],
         };
 
         const jsonStr = JSON.stringify(exportData, null, 2);

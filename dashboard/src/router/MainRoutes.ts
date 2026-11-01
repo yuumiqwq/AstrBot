@@ -172,6 +172,11 @@ const MainRoutes = {
       component: () => import('@/views/PersonaExampleReviewPage.vue')
     },
     {
+      name: 'PersonaPresets',
+      path: '/persona/:personaId/presets',
+      component: () => import('@/views/PersonaExampleReviewPage.vue')
+    },
+    {
       name: 'Persona',
       path: '/persona',
       component: () => import('@/views/PersonaPage.vue')

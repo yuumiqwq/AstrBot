@@ -1,7 +1,7 @@
 <template>
   <v-dialog
     v-model="showDialog"
-    :max-width="$vuetify.display.smAndDown ? undefined : '1200px'"
+    :max-width="$vuetify.display.smAndDown ? undefined : '880px'"
     scrollable
     persistent
   >
@@ -29,7 +29,7 @@
 
         <v-form v-model="formValid">
           <v-row class="persona-form-layout">
-            <v-col cols="12" md="6" class="persona-basic-col">
+            <v-col cols="12" class="persona-basic-col">
               <v-text-field
                 v-model="personaForm.persona_id"
                 :label="tm('form.personaId')"
@@ -61,14 +61,11 @@
               />
             </v-col>
 
-            <v-col cols="12" md="6" class="persona-panels-col">
+            <v-col cols="12" class="persona-panels-col">
               <section class="persona-capabilities-section">
                 <h3 class="persona-section-title">
                   {{ tm("form.capabilities") }}
                 </h3>
-                <p class="persona-section-description">
-                  {{ tm("form.capabilitiesHelp") }}
-                </p>
                 <PersonaCapabilitiesEditor
                   v-model:tools="personaForm.tools"
                   v-model:skills="personaForm.skills"
@@ -79,69 +76,19 @@
                 />
               </section>
 
-              <v-expansion-panels
-                v-model="expandedPanels"
-                multiple
-                class="persona-dialogs-panels"
+              <v-btn
+                variant="outlined"
+                prepend-icon="mdi-chat-outline"
+                append-icon="mdi-chevron-right"
+                :disabled="saving || !formValid"
+                @click="openPresets"
               >
-                <v-expansion-panel value="dialogs" elevation="0">
-                  <v-expansion-panel-title>
-                    <v-icon class="mr-2">mdi-chat</v-icon>
-                    {{ tm("form.presetDialogs") }}
-                    <v-chip
-                      v-if="personaForm.begin_dialogs.length > 0"
-                      size="small"
-                      color="primary"
-                      variant="tonal"
-                      class="ml-2"
-                    >
-                      {{ personaForm.begin_dialogs.length / 2 }}
-                    </v-chip>
-                  </v-expansion-panel-title>
-
-                  <v-expansion-panel-text>
-                    <p class="text-body-2 text-medium-emphasis mb-3">
-                      {{ tm("form.presetDialogsHelp") }}
-                    </p>
-
-                    <v-textarea
-                      v-for="(dialog, index) in personaForm.begin_dialogs"
-                      :key="index"
-                      v-model="personaForm.begin_dialogs[index]"
-                      :label="
-                        index % 2 === 0
-                          ? tm('form.userMessage')
-                          : tm('form.assistantMessage')
-                      "
-                      :rules="getDialogRules(index)"
-                      variant="outlined"
-                      rows="2"
-                      density="comfortable"
-                      class="mb-3"
-                    >
-                      <template #append>
-                        <v-btn
-                          icon="mdi-delete"
-                          variant="text"
-                          size="small"
-                          color="error"
-                          @click="removeDialog(index)"
-                        />
-                      </template>
-                    </v-textarea>
-
-                    <v-btn
-                      color="primary"
-                      variant="tonal"
-                      prepend-icon="mdi-plus"
-                      block
-                      @click="addDialogPair"
-                    >
-                      {{ tm("buttons.addDialogPair") }}
-                    </v-btn>
-                  </v-expansion-panel-text>
-                </v-expansion-panel>
-              </v-expansion-panels>
+                {{
+                  editingPersona && !formDirty
+                    ? tm("form.presetDialogs")
+                    : tm("review.saveAndOpen")
+                }}
+              </v-btn>
             </v-col>
           </v-row>
         </v-form>
@@ -165,7 +112,7 @@
           variant="tonal"
           :loading="saving"
           :disabled="!formValid"
-          @click="savePersona"
+          @click="savePersona()"
         >
           {{ tm("buttons.save") }}
         </v-btn>
@@ -176,7 +123,7 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
-import { useDisplay } from "vuetify";
+import { useRouter } from "vue-router";
 import { personaApi, skillApi, toolApi } from "@/api/v1";
 import { useModuleI18n } from "@/i18n/composables";
 import {
@@ -207,11 +154,11 @@ const props = defineProps({
 const emit = defineEmits(["update:modelValue", "saved", "error", "deleted"]);
 const { tm } = useModuleI18n("features/persona");
 const confirmDialog = useConfirmDialog();
-const { smAndDown } = useDisplay();
+const router = useRouter();
 
 const saving = ref(false);
 const formValid = ref(false);
-const expandedPanels = ref([]);
+const originalForm = ref("");
 const availableTools = ref([]);
 const availableSkills = ref([]);
 const loadingTools = ref(false);
@@ -221,7 +168,6 @@ const personaForm = reactive({
   persona_id: "",
   system_prompt: "",
   custom_error_message: "",
-  begin_dialogs: [],
   tools: null,
   skills: null,
   folder_id: null,
@@ -231,6 +177,9 @@ const showDialog = computed({
   get: () => props.modelValue,
   set: (value) => emit("update:modelValue", value),
 });
+const formDirty = computed(
+  () => JSON.stringify(personaForm) !== originalForm.value,
+);
 const folderDisplayName = computed(
   () =>
     props.currentFolderName || props.currentFolderId || tm("form.rootFolder"),
@@ -255,14 +204,13 @@ function initializeForm(persona = null) {
     persona_id: persona?.persona_id || "",
     system_prompt: persona?.system_prompt || "",
     custom_error_message: persona?.custom_error_message || "",
-    begin_dialogs: [...(persona?.begin_dialogs || [])],
     tools:
       persona?.tools === null || !persona ? null : [...(persona.tools || [])],
     skills:
       persona?.skills === null || !persona ? null : [...(persona.skills || [])],
     folder_id: persona?.folder_id ?? props.currentFolderId,
   });
-  expandedPanels.value = smAndDown.value ? [] : ["dialogs"];
+  originalForm.value = JSON.stringify(personaForm);
 }
 
 function closeDialog() {
@@ -319,24 +267,14 @@ async function loadExistingPersonaIds() {
   }
 }
 
-async function savePersona() {
+async function savePersona(goToPresets = false) {
   if (!formValid.value) {
     return;
   }
-  for (let index = 0; index < personaForm.begin_dialogs.length; index += 1) {
-    if (index === 0 && personaForm.begin_dialogs[1]?.trim()) continue;
-    if (!personaForm.begin_dialogs[index]?.trim()) {
-      const dialogType =
-        index % 2 === 0 ? tm("form.userMessage") : tm("form.assistantMessage");
-      emit("error", tm("validation.dialogRequired", { type: dialogType }));
-      return;
-    }
-  }
-
   saving.value = true;
   const payload = {
     ...personaForm,
-    begin_dialogs: [...personaForm.begin_dialogs],
+    ...(!props.editingPersona ? { begin_dialogs: [] } : {}),
     tools: personaForm.tools === null ? null : [...personaForm.tools],
     skills: personaForm.skills === null ? null : [...personaForm.skills],
   };
@@ -348,6 +286,11 @@ async function savePersona() {
       emit("saved", response.data?.message || tm("messages.saveSuccess"));
       window.dispatchEvent(new CustomEvent("astrbot:persona-saved"));
       closeDialog();
+      if (goToPresets)
+        await router.push({
+          name: "PersonaPresets",
+          params: { personaId: personaForm.persona_id },
+        });
     } else {
       emit("error", response.data?.message || tm("messages.saveError"));
     }
@@ -387,28 +330,16 @@ async function deletePersona() {
   }
 }
 
-function addDialogPair() {
-  personaForm.begin_dialogs.push("", "");
-  if (!expandedPanels.value.includes("dialogs")) {
-    expandedPanels.value.push("dialogs");
+async function openPresets() {
+  if (!props.editingPersona || formDirty.value) {
+    await savePersona(true);
+    return;
   }
-}
-
-function removeDialog(index) {
-  personaForm.begin_dialogs.splice(index % 2 === 0 ? index : index - 1, 2);
-}
-
-function getDialogRules(index) {
-  if (index === 0) return [];
-  const dialogType =
-    index % 2 === 0 ? tm("form.userMessage") : tm("form.assistantMessage");
-  return [
-    (value) =>
-      Boolean(value) || tm("validation.dialogRequired", { type: dialogType }),
-    (value) =>
-      Boolean(value?.trim()) ||
-      tm("validation.dialogRequired", { type: dialogType }),
-  ];
+  closeDialog();
+  await router.push({
+    name: "PersonaPresets",
+    params: { personaId: props.editingPersona.persona_id },
+  });
 }
 
 watch(
