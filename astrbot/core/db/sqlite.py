@@ -43,6 +43,11 @@ from astrbot.core.db.po import (
 from astrbot.core.db.po import (
     Stats as DeprecatedStats,
 )
+from astrbot.core.persona_presets import (
+    normalize_preset_segments,
+    preserve_preset_segments,
+    preset_revision,
+)
 from astrbot.core.sentinels import NOT_GIVEN
 
 TxResult = T.TypeVar("TxResult")
@@ -96,6 +101,16 @@ class SQLiteDatabase(BaseDatabase):
             await self._ensure_persona_folder_columns(conn)
             await self._ensure_persona_skills_column(conn)
             await self._ensure_persona_custom_error_message_column(conn)
+            columns = {
+                row[1]
+                for row in (
+                    await conn.execute(text("PRAGMA table_info(personas)"))
+                ).fetchall()
+            }
+            if "begin_dialog_segments" not in columns:
+                await conn.execute(
+                    text("ALTER TABLE personas ADD COLUMN begin_dialog_segments JSON")
+                )
             await self._ensure_platform_message_history_checkpoint_column(conn)
             await self._ensure_chatui_project_workspace_columns(conn)
             await self._ensure_conversation_indexes(conn)
@@ -1237,6 +1252,7 @@ class SQLiteDatabase(BaseDatabase):
         custom_error_message=None,
         folder_id=None,
         sort_order=0,
+        begin_dialog_segments=None,
     ):
         """Insert a new persona record."""
         async with self.get_db() as session:
@@ -1246,6 +1262,9 @@ class SQLiteDatabase(BaseDatabase):
                     persona_id=persona_id,
                     system_prompt=system_prompt,
                     begin_dialogs=begin_dialogs or [],
+                    begin_dialog_segments=normalize_preset_segments(
+                        begin_dialogs or [], begin_dialog_segments
+                    ),
                     tools=tools,
                     skills=skills,
                     custom_error_message=custom_error_message,
@@ -1281,17 +1300,48 @@ class SQLiteDatabase(BaseDatabase):
         tools=NOT_GIVEN,
         skills=NOT_GIVEN,
         custom_error_message=NOT_GIVEN,
+        begin_dialog_segments=NOT_GIVEN,
+        expected_preset_revision=None,
     ):
         """Update a persona's system prompt or begin dialogs."""
         async with self.get_db() as session:
             session: AsyncSession
             async with session.begin():
+                if begin_dialogs is not None:
+                    await session.execute(text("BEGIN IMMEDIATE"))
+                    current = (
+                        await session.execute(
+                            select(Persona).where(Persona.persona_id == persona_id)
+                        )
+                    ).scalar_one_or_none()
+                    if current is None:
+                        return None
+                    if (
+                        expected_preset_revision is not None
+                        and preset_revision(
+                            current.begin_dialogs or [], current.begin_dialog_segments
+                        )
+                        != expected_preset_revision
+                    ):
+                        raise ValueError("预设对话已更新，请刷新后重试")
+                    begin_dialog_segments = (
+                        preserve_preset_segments(
+                            current.begin_dialogs or [],
+                            current.begin_dialog_segments,
+                            begin_dialogs,
+                        )
+                        if begin_dialog_segments is NOT_GIVEN
+                        else normalize_preset_segments(
+                            begin_dialogs, begin_dialog_segments
+                        )
+                    )
                 query = update(Persona).where(col(Persona.persona_id) == persona_id)
                 values = {}
                 if system_prompt is not None:
                     values["system_prompt"] = system_prompt
                 if begin_dialogs is not None:
                     values["begin_dialogs"] = begin_dialogs
+                    values["begin_dialog_segments"] = begin_dialog_segments
                 if tools is not NOT_GIVEN:
                     values["tools"] = tools
                 if skills is not NOT_GIVEN:

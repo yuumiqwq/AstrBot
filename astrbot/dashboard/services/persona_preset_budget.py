@@ -3,15 +3,23 @@
 from astrbot.core.agent.context.token_counter import EstimateTokenCounter
 from astrbot.core.agent.message import Message
 from astrbot.core.config.agent_runner import resolve_context_compression_config
+from astrbot.core.persona_presets import prepare_preset_messages
 from astrbot.core.utils.llm_metadata import LLM_METADATAS
 
 
-async def preset_budget(core_lifecycle, dialogs: list[str], *, enforce: bool = False):
+async def preset_budget(
+    core_lifecycle,
+    dialogs: list[str],
+    *,
+    segments: list[dict] | None = None,
+    enforce: bool = False,
+):
     """Estimate preset usage against the current default chat context capacity.
 
     Args:
         core_lifecycle: Active host, including its default provider and settings.
         dialogs: Alternating native user and assistant preset text.
+        segments: Optional independent excerpt boundaries.
         enforce: Raise when a proposed save exceeds the fifteen-percent allowance.
 
     Returns:
@@ -43,10 +51,19 @@ async def preset_budget(core_lifecycle, dialogs: list[str], *, enforce: bool = F
                 if metadata
                 else options["fallback_max_context_tokens"]
             )
-    tokens = EstimateTokenCounter().count_tokens(
+    processed = prepare_preset_messages(dialogs, segments)
+    counter = EstimateTokenCounter()
+    tokens = counter.count_tokens(
         [
-            Message(role="user" if index % 2 == 0 else "assistant", content=content)
-            for index, content in enumerate(dialogs)
+            Message(role=message["role"], content=message["content"])
+            for message in processed
+        ]
+    )
+    overhead = counter.count_tokens(
+        [
+            Message(role="system", content=message["content"])
+            for message in processed
+            if message["role"] == "system"
         ]
     )
     limit = int(capacity * 0.15)
@@ -60,6 +77,7 @@ async def preset_budget(core_lifecycle, dialogs: list[str], *, enforce: bool = F
         "model": model,
         "context_tokens": capacity,
         "estimated_tokens": tokens,
+        "overhead_tokens": overhead,
         "used_percent": round(percent, 2),
         "limit_percent": 15,
         "limit_tokens": limit,

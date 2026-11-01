@@ -164,6 +164,8 @@ class Persona(TimestampMixin, SQLModel, table=True):
     system_prompt: str = Field(sa_type=Text, nullable=False)
     begin_dialogs: list | None = Field(default=None, sa_type=JSON)
     """a list of strings, each representing a dialog to start with"""
+    begin_dialog_segments: list[dict] | None = Field(default=None, sa_type=JSON)
+    """Independent example excerpts; null treats legacy text as one excerpt."""
     tools: list | None = Field(default=None, sa_type=JSON)
     """None means use ALL tools for default, empty list means no tools, otherwise a list of tool names."""
     skills: list | None = Field(default=None, sa_type=JSON)
@@ -627,6 +629,7 @@ class Personality(TypedDict):
     prompt: str
     name: str
     begin_dialogs: list[str]
+    begin_dialog_segments: list[dict] | None
     mood_imitation_dialogs: list[str]
     """情感模拟对话预设。在 v4.0.0 版本及之后，已被废弃。"""
     tools: list[str] | None

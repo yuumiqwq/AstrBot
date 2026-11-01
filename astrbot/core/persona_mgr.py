@@ -3,6 +3,12 @@ from astrbot.api import sp
 from astrbot.core.astrbot_config_mgr import AstrBotConfigManager
 from astrbot.core.db import BaseDatabase
 from astrbot.core.db.po import Persona, PersonaFolder, Personality
+from astrbot.core.persona_presets import (
+    PRESET_DIALOGUE_STYLE_INSTRUCTION as PRESET_DIALOGUE_STYLE_INSTRUCTION,
+)
+from astrbot.core.persona_presets import (
+    prepare_preset_messages,
+)
 from astrbot.core.platform.message_session import MessageSession
 from astrbot.core.sentinels import NOT_GIVEN
 
@@ -16,13 +22,11 @@ centralizes the in-module usages; keep it in sync with those call sites if the
 reserved id ever changes.
 """
 
-PRESET_DIALOGUE_STYLE_INSTRUCTION = "只参考预设对话中 assistant 一方的措辞与口癖，user 一方用于理解对话情境和对方的表达，不作为自己的风格范例。"
-
-
 DEFAULT_PERSONALITY = Personality(
     prompt="You are a helpful and friendly assistant.",
     name=SYSTEM_DEFAULT_PERSONA_ID,
     begin_dialogs=[],
+    begin_dialog_segments=None,
     mood_imitation_dialogs=[],
     tools=None,
     skills=None,
@@ -224,6 +228,8 @@ class PersonaManager:
         tools: list[str] | None | object = NOT_GIVEN,
         skills: list[str] | None | object = NOT_GIVEN,
         custom_error_message: str | None | object = NOT_GIVEN,
+        begin_dialog_segments: list[dict] | None | object = NOT_GIVEN,
+        expected_preset_revision: str | None = None,
     ):
         """更新指定 persona 的信息。tools 参数为 None 时表示使用所有工具，空列表表示不使用任何工具"""
         existing_persona = await self.db.get_persona_by_id(persona_id)
@@ -236,6 +242,10 @@ class PersonaManager:
             update_kwargs["skills"] = skills
         if custom_error_message is not NOT_GIVEN:
             update_kwargs["custom_error_message"] = custom_error_message
+        if begin_dialog_segments is not NOT_GIVEN:
+            update_kwargs["begin_dialog_segments"] = begin_dialog_segments
+        if expected_preset_revision is not None:
+            update_kwargs["expected_preset_revision"] = expected_preset_revision
 
         persona = await self.db.update_persona(
             persona_id,
@@ -404,6 +414,7 @@ class PersonaManager:
         custom_error_message: str | None = None,
         folder_id: str | None = None,
         sort_order: int = 0,
+        begin_dialog_segments: list[dict] | None = None,
     ) -> Persona:
         """创建新的 persona。
 
@@ -431,6 +442,7 @@ class PersonaManager:
             custom_error_message=custom_error_message,
             folder_id=folder_id,
             sort_order=sort_order,
+            begin_dialog_segments=begin_dialog_segments,
         )
         self.personas.append(new_persona)
         self.get_v3_persona_data()
@@ -452,6 +464,7 @@ class PersonaManager:
                 "prompt": persona.system_prompt,
                 "name": persona.persona_id,
                 "begin_dialogs": persona.begin_dialogs or [],
+                "begin_dialog_segments": persona.begin_dialog_segments,
                 "mood_imitation_dialogs": [],  # deprecated
                 "tools": persona.tools,
                 "skills": persona.skills,
@@ -472,26 +485,10 @@ class PersonaManager:
                         f"{persona_cfg['name']} 人格情景预设对话格式不对，条数应该为偶数。",
                     )
                     begin_dialogs = []
-                user_turn = True
-                for dialog in begin_dialogs:
-                    bd_processed.append(
-                        {
-                            "role": "user" if user_turn else "assistant",
-                            "content": dialog,
-                            "_no_save": True,  # 不持久化到 db
-                        },
+                if begin_dialogs:
+                    bd_processed = prepare_preset_messages(
+                        begin_dialogs, persona_cfg["begin_dialog_segments"]
                     )
-                    user_turn = not user_turn
-
-            if bd_processed:
-                bd_processed.insert(
-                    0,
-                    {
-                        "role": "system",
-                        "content": PRESET_DIALOGUE_STYLE_INSTRUCTION,
-                        "_no_save": True,
-                    },
-                )
 
             try:
                 persona = Personality(
@@ -520,6 +517,7 @@ class PersonaManager:
             persona_id=selected_default_persona["name"],
             system_prompt=selected_default_persona["prompt"],
             begin_dialogs=selected_default_persona["begin_dialogs"],
+            begin_dialog_segments=selected_default_persona["begin_dialog_segments"],
             tools=selected_default_persona["tools"] or None,
             skills=selected_default_persona["skills"] or None,
             custom_error_message=selected_default_persona["custom_error_message"],

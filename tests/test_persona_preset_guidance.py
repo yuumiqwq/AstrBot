@@ -11,6 +11,7 @@ from astrbot.core.persona_mgr import (
     PRESET_DIALOGUE_STYLE_INSTRUCTION,
     PersonaManager,
 )
+from astrbot.core.persona_presets import PRESET_DIALOGUE_END_INSTRUCTION
 from astrbot.core.session_context import make_context_manager, prepare_request_context
 
 
@@ -38,9 +39,11 @@ class PersonaPresetGuidanceTests(unittest.TestCase):
                 },
             )
             self.assertEqual(
-                [m["role"] for m in processed], ["system", "user", "assistant"]
+                [m["role"] for m in processed],
+                ["system", "system", "user", "assistant", "system"],
             )
-            self.assertEqual([m["content"] for m in processed[1:]], ["Q", "A"])
+            self.assertEqual([m["content"] for m in processed[2:4]], ["Q", "A"])
+            self.assertEqual(processed[-1]["content"], PRESET_DIALOGUE_END_INSTRUCTION)
             self.assertEqual(personas[0]["prompt"], "Exact user persona")
         self.assertEqual(self.persona, original)
 

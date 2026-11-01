@@ -452,6 +452,7 @@ class BaseDatabase(abc.ABC):
         custom_error_message: str | None = None,
         folder_id: str | None = None,
         sort_order: int = 0,
+        begin_dialog_segments: list[dict] | None = None,
     ) -> Persona:
         """Insert a new persona record.
 
@@ -486,6 +487,8 @@ class BaseDatabase(abc.ABC):
         tools: list[str] | None | object = NOT_GIVEN,
         skills: list[str] | None | object = NOT_GIVEN,
         custom_error_message: str | None | object = NOT_GIVEN,
+        begin_dialog_segments: list[dict] | None | object = NOT_GIVEN,
+        expected_preset_revision: str | None = None,
     ) -> Persona | None:
         """Update a persona record.
 

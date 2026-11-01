@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from astrbot.core.core_lifecycle import AstrBotCoreLifecycle
+from astrbot.core.persona_presets import (
+    normalize_preset_segments,
+    preserve_preset_segments,
+    preset_revision,
+)
 from astrbot.core.sentinels import NOT_GIVEN
 from astrbot.dashboard.services.persona_preset_budget import preset_budget
 
@@ -49,6 +54,9 @@ class PersonaService:
             str(raw_system_prompt).strip() if raw_system_prompt is not None else ""
         )
         begin_dialogs = payload.get("begin_dialogs", [])
+        segments = normalize_preset_segments(
+            begin_dialogs or [], payload.get("begin_dialog_segments")
+        )
         tools = payload.get("tools")
         skills = payload.get("skills")
         custom_error_message = self._normalize_custom_error_message(
@@ -63,7 +71,9 @@ class PersonaService:
             raise PersonaServiceError("系统提示词不能为空")
 
         self._validate_begin_dialogs(begin_dialogs)
-        await preset_budget(self.core_lifecycle, begin_dialogs or [], enforce=True)
+        await preset_budget(
+            self.core_lifecycle, begin_dialogs or [], segments=segments, enforce=True
+        )
 
         persona = await self.persona_mgr.create_persona(
             persona_id=persona_id,
@@ -74,6 +84,7 @@ class PersonaService:
             custom_error_message=custom_error_message,
             folder_id=folder_id,
             sort_order=sort_order,
+            begin_dialog_segments=segments,
         )
 
         return {
@@ -103,13 +114,34 @@ class PersonaService:
 
         if begin_dialogs is not None:
             self._validate_begin_dialogs(begin_dialogs)
-            await preset_budget(self.core_lifecycle, begin_dialogs, enforce=True)
+            current = await self.persona_mgr.db.get_persona_by_id(persona_id)
+            if current is None:
+                raise ValueError("人格不存在")
+            segments = (
+                normalize_preset_segments(
+                    begin_dialogs, payload["begin_dialog_segments"]
+                )
+                if "begin_dialog_segments" in payload
+                else preserve_preset_segments(
+                    current.begin_dialogs or [],
+                    current.begin_dialog_segments,
+                    begin_dialogs,
+                )
+            )
+            await preset_budget(
+                self.core_lifecycle, begin_dialogs, segments=segments, enforce=True
+            )
+            if not payload.get("preset_revision"):
+                raise ValueError("请先读取预设对话，再提交当前版本进行保存")
 
         update_kwargs = {
             "persona_id": persona_id,
             "system_prompt": system_prompt,
             "begin_dialogs": begin_dialogs,
         }
+        if begin_dialogs is not None:
+            update_kwargs["begin_dialog_segments"] = segments
+            update_kwargs["expected_preset_revision"] = payload["preset_revision"]
         if has_tools:
             update_kwargs["tools"] = tools
         if has_skills:
@@ -242,6 +274,12 @@ class PersonaService:
             "persona_id": persona.persona_id,
             "system_prompt": persona.system_prompt,
             "begin_dialogs": persona.begin_dialogs or [],
+            "begin_dialog_segments": normalize_preset_segments(
+                persona.begin_dialogs or [], persona.begin_dialog_segments
+            ),
+            "preset_revision": preset_revision(
+                persona.begin_dialogs or [], persona.begin_dialog_segments
+            ),
             "tools": (persona.tools or []) if empty_lists_for_tools else persona.tools,
             "skills": (persona.skills or [])
             if empty_lists_for_tools

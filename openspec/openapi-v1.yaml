@@ -97,6 +97,62 @@ tags:
   - name: Webhooks
 
 paths:
+  /api/v1/persona-example-reviews/presets/budget:
+    post:
+      tags:
+      - Persona example reviews
+      summary: Estimate Presets
+      operationId: estimate_presets_api_v1_persona_example_reviews_presets_budget_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresetBudgetRequest'
+        required: true
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+      security:
+      - BearerAuth: []
+  /api/v1/persona-example-reviews/history:
+    get:
+      tags:
+      - Persona example reviews
+      summary: Get Source History
+      operationId: get_source_history_api_v1_persona_example_reviews_history_get
+      parameters:
+      - name: conversation_id
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: Conversation Id
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+      security:
+      - BearerAuth: []
   /api/v1/auth/login:
     post:
       tags: [Auth]
@@ -5596,7 +5652,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
       - BearerAuth: []
-
   /api/v1/persona-example-reviews/presets:
     get:
       tags:
@@ -5652,7 +5707,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
       - BearerAuth: []
-
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -5881,6 +5935,139 @@ components:
         type: string
 
   schemas:
+    HistoryRange:
+      properties:
+        start:
+          type: integer
+          minimum: 0.0
+          title: Start
+        end:
+          type: integer
+          minimum: 0.0
+          title: End
+      additionalProperties: false
+      type: object
+      required:
+      - start
+      - end
+      title: HistoryRange
+    PresetBudgetRequest:
+      properties:
+        persona_id:
+          type: string
+          minLength: 1
+          title: Persona Id
+        begin_dialogs:
+          items:
+            type: string
+          type: array
+          title: Begin Dialogs
+        segments:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/PresetSegment'
+            type: array
+          - type: 'null'
+          title: Segments
+      additionalProperties: false
+      type: object
+      required:
+      - persona_id
+      - begin_dialogs
+      title: PresetBudgetRequest
+    PersonaByIdRequest:
+      properties:
+        persona_id:
+          type: string
+          title: Persona Id
+        system_prompt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: System Prompt
+        begin_dialogs:
+          anyOf:
+          - items: {}
+            type: array
+          - type: 'null'
+          title: Begin Dialogs
+        begin_dialog_segments:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Begin Dialog Segments
+        preset_revision:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Preset Revision
+        tools:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Tools
+        skills:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Skills
+        custom_error_message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Custom Error Message
+        folder_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Folder Id
+        sort_order:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Sort Order
+      additionalProperties: true
+      type: object
+      required:
+      - persona_id
+      title: PersonaByIdRequest
+    PresetSegment:
+      properties:
+        id:
+          type: string
+          minLength: 1
+          title: Id
+        start_pair:
+          type: integer
+          minimum: 0.0
+          title: Start Pair
+        pair_count:
+          type: integer
+          minimum: 1.0
+          title: Pair Count
+        source_review_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Review Id
+        source_title:
+          type: string
+          title: Source Title
+          default: ''
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - start_pair
+      - pair_count
+      title: PresetSegment
     PresetUpdate:
       properties:
         persona_id:
@@ -5897,6 +6084,13 @@ components:
             type: string
           type: array
           title: Begin Dialogs
+        segments:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/PresetSegment'
+            type: array
+          - type: 'null'
+          title: Segments
       additionalProperties: false
       type: object
       required:
@@ -5910,7 +6104,6 @@ components:
           items:
             type: string
           type: array
-          maxItems: 100
           minItems: 2
           title: Begin Dialogs
         persona_id:
@@ -5929,7 +6122,6 @@ components:
           items:
             type: string
           type: array
-          maxItems: 100
           minItems: 2
           title: Begin Dialogs
         revision:
@@ -5966,6 +6158,18 @@ components:
           minimum: 0.0
           title: Context Rounds
           default: 2
+        revision:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Revision
+        ranges:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/HistoryRange'
+            type: array
+          - type: 'null'
+          title: Ranges
       additionalProperties: false
       type: object
       required:
@@ -6802,31 +7006,68 @@ components:
       additionalProperties: false
 
     PersonaRequest:
-      type: object
-      required: [persona_id, system_prompt]
       properties:
         persona_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Persona Id
         system_prompt:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: System Prompt
         begin_dialogs:
-          type: array
-          items:
-            type: string
-        folder_id:
-          type: string
+          anyOf:
+          - items: {}
+            type: array
+          - type: 'null'
+          title: Begin Dialogs
+        begin_dialog_segments:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Begin Dialog Segments
+        preset_revision:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Preset Revision
         tools:
-          type: array
-          items:
-            type: string
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Tools
         skills:
-          type: array
-          items:
-            type: string
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Skills
         custom_error_message:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Custom Error Message
+        folder_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Folder Id
+        sort_order:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Sort Order
       additionalProperties: true
-
+      type: object
+      title: PersonaRequest
     PersonaFolderRequest:
       type: object
       properties:

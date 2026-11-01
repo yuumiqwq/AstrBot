@@ -362,6 +362,8 @@ class PersonaRequest(OpenModel):
     persona_id: str | None = None
     system_prompt: str | None = None
     begin_dialogs: list[Any] | None = None
+    begin_dialog_segments: list[dict] | None = None
+    preset_revision: str | None = None
     tools: list[str] | None = None
     skills: list[str] | None = None
     custom_error_message: str | None = None
@@ -369,7 +371,7 @@ class PersonaRequest(OpenModel):
     sort_order: int | None = None
 
 
-class PersonaByIdRequest(OpenModel):
+class PersonaByIdRequest(PersonaRequest):
     persona_id: str
 
 

@@ -81,9 +81,11 @@ async def test_existing_presets_can_be_edited_and_partially_deleted(service):
         "fish", saved["revision"], ["question", "edited answer"]
     )
     persona = await service.db.get_persona_by_id("fish")
-    assert persona.begin_dialogs == edited["begin_dialogs"] == [
-        "question", "edited answer"
-    ]
+    assert (
+        persona.begin_dialogs
+        == edited["begin_dialogs"]
+        == ["question", "edited answer"]
+    )
     assert persona.system_prompt == "original"
     cleared = await service.update_presets("fish", edited["revision"], [])
     assert cleared["begin_dialogs"] == []
@@ -94,11 +96,16 @@ async def test_existing_presets_can_be_edited_and_partially_deleted(service):
 async def test_preset_edit_preserves_intervening_approval(service):
     snapshot = await service.presets("fish")
     candidate = await service.create("fish", ["new question", "new answer"])
-    await service.update(candidate["review_id"], 1, candidate["begin_dialogs"], "approve", "admin")
+    await service.update(
+        candidate["review_id"], 1, candidate["begin_dialogs"], "approve", "admin"
+    )
     with pytest.raises(ValueError, match="已更新"):
         await service.update_presets("fish", snapshot["revision"], [])
     assert (await service.presets("fish"))["begin_dialogs"] == [
-        "old user", "old reply", "new question", "new answer"
+        "old user",
+        "old reply",
+        "new question",
+        "new answer",
     ]
 
 
@@ -114,22 +121,34 @@ async def test_preset_allowance_blocks_every_write_entry(service):
         await service.update_presets("fish", current["revision"], too_large)
     personas = PersonaService(service.core_lifecycle)
     with pytest.raises(ValueError, match="15%"):
-        await personas.update_persona({"persona_id": "fish", "begin_dialogs": too_large})
+        await personas.update_persona(
+            {"persona_id": "fish", "begin_dialogs": too_large}
+        )
     with pytest.raises(ValueError, match="15%"):
-        await personas.create_persona({"persona_id": "new", "system_prompt": "prompt", "begin_dialogs": too_large})
+        await personas.create_persona(
+            {"persona_id": "new", "system_prompt": "prompt", "begin_dialogs": too_large}
+        )
     assert (await service.presets("fish"))["begin_dialogs"] == current["begin_dialogs"]
     assert (await service.list("fish", "pending", 1))["items"][0]["state"] == "pending"
 
 
 @pytest.mark.asyncio
 async def test_preset_allowance_uses_provider_capacity_and_inclusive_limit():
-    provider = SimpleNamespace(provider_config={"max_context_tokens": 1000}, get_model=lambda: "custom")
-    core = SimpleNamespace(star_context=SimpleNamespace(get_using_provider_async=AsyncMock(return_value=provider)))
-    budget = await preset_budget(core, ["", "a" * 500], enforce=True)
+    provider = SimpleNamespace(
+        provider_config={"max_context_tokens": 1000}, get_model=lambda: "custom"
+    )
+    core = SimpleNamespace(
+        star_context=SimpleNamespace(
+            get_using_provider_async=AsyncMock(return_value=provider)
+        )
+    )
+    overhead = (await preset_budget(core, ["", ""]))["overhead_tokens"]
+    body_length = ((150 - overhead) * 10 + 2) // 3
+    budget = await preset_budget(core, ["", "a" * body_length], enforce=True)
     assert budget["used_percent"] == 15
     assert budget["remaining_tokens"] == 0
     with pytest.raises(ValueError, match="15%"):
-        await preset_budget(core, ["", "a" * 510], enforce=True)
+        await preset_budget(core, ["", "a" * (body_length + 10)], enforce=True)
 
 
 @pytest.mark.asyncio
@@ -199,18 +218,19 @@ async def test_import_keeps_complete_context_and_skips_tool_and_system_text(serv
         )
         await session.commit()
     assert await service.import_conversation("fish", "conv", 1) == {
-        "added": 2,
+        "added": 3,
         "skipped": 0,
     }
     assert await service.import_conversation("fish", "conv", 1) == {
         "added": 0,
-        "skipped": 2,
+        "skipped": 3,
     }
     items = (await service.list("fish", "pending", 1))["items"]
-    assert sorted((row["begin_dialogs"] for row in items), key=len) == [
-        ["first\n\nsecond", "reply"],
-        ["first\n\nsecond", "reply", "next", "next reply"],
-    ]
+    assert {tuple(row["begin_dialogs"]) for row in items} == {
+        ("", "orphan"),
+        ("", "orphan", "first\n\nsecond", "reply"),
+        ("first\n\nsecond", "reply", "next", "next reply"),
+    }
     assert (await service.db.get_persona_by_id("fish")).begin_dialogs == [
         "old user",
         "old reply",
@@ -238,25 +258,43 @@ async def test_review_api_requires_dashboard_login(service):
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         assert (await client.get("/api/v1/persona-example-reviews")).status_code == 401
-        assert (await client.get("/api/v1/persona-example-reviews/presets?persona_id=fish")).status_code == 401
+        assert (
+            await client.get("/api/v1/persona-example-reviews/presets?persona_id=fish")
+        ).status_code == 401
         token = jwt.encode(
             {"username": "admin"}, app.state.jwt_secret, algorithm="HS256"
         )
         client.headers["Authorization"] = f"Bearer {token}"
-        preset = (await client.get("/api/v1/persona-example-reviews/presets?persona_id=fish")).json()["data"]
-        updated = await client.put("/api/v1/persona-example-reviews/presets", json={
-            "persona_id": "fish", "revision": preset["revision"], "begin_dialogs": ["", "opening"],
-        })
+        preset = (
+            await client.get("/api/v1/persona-example-reviews/presets?persona_id=fish")
+        ).json()["data"]
+        updated = await client.put(
+            "/api/v1/persona-example-reviews/presets",
+            json={
+                "persona_id": "fish",
+                "revision": preset["revision"],
+                "begin_dialogs": ["", "opening"],
+            },
+        )
         assert updated.status_code == 200
-        stale = await client.put("/api/v1/persona-example-reviews/presets", json={
-            "persona_id": "fish", "revision": preset["revision"], "begin_dialogs": [],
-        })
+        stale = await client.put(
+            "/api/v1/persona-example-reviews/presets",
+            json={
+                "persona_id": "fish",
+                "revision": preset["revision"],
+                "begin_dialogs": [],
+            },
+        )
         assert stale.status_code == 409
         # Restore this test's original fixture before testing approval below.
-        await client.put("/api/v1/persona-example-reviews/presets", json={
-            "persona_id": "fish", "revision": updated.json()["data"]["revision"],
-            "begin_dialogs": preset["begin_dialogs"],
-        })
+        await client.put(
+            "/api/v1/persona-example-reviews/presets",
+            json={
+                "persona_id": "fish",
+                "revision": updated.json()["data"]["revision"],
+                "begin_dialogs": preset["begin_dialogs"],
+            },
+        )
         created = await client.post(
             "/api/v1/persona-example-reviews",
             json={"persona_id": "fish", "begin_dialogs": ["question", "answer"]},
