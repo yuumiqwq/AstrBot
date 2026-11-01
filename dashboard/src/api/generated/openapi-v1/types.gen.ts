@@ -318,12 +318,35 @@ export type ErrorEnvelope = {
     data?: unknown;
 };
 
+export type ExampleCreate = {
+    begin_dialogs: Array<(string)>;
+    persona_id: string;
+};
+
+export type ExampleDecision = {
+    begin_dialogs: Array<(string)>;
+    revision: number;
+    action: 'save' | 'approve' | 'reject';
+};
+
+export type action2 = 'save' | 'approve' | 'reject';
+
+export type ExampleImport = {
+    persona_id: string;
+    conversation_id: string;
+    context_rounds?: number;
+};
+
 export type FileUploadRequest = {
     file: (Blob | File);
 };
 
 export type GhproxyTestRequest = {
     proxy_url: string;
+};
+
+export type HTTPValidationError = {
+    detail?: Array<ValidationError>;
 };
 
 export type ImMessageRequest = {
@@ -763,6 +786,16 @@ export type UpdateRequest = {
     proxy?: string;
     reboot?: boolean;
     progress_id?: string;
+};
+
+export type ValidationError = {
+    loc: Array<(string | number)>;
+    msg: string;
+    type: string;
+    input?: unknown;
+    ctx?: {
+        [key: string]: unknown;
+    };
 };
 
 export type LoginData = {
@@ -3958,3 +3991,46 @@ export type ReceivePlatformWebhookData = {
 export type ReceivePlatformWebhookResponse = (unknown);
 
 export type ReceivePlatformWebhookError = unknown;
+
+export type ListSourcesApiV1PersonaExampleReviewsSourcesGetResponse = (SuccessEnvelope);
+
+export type ListSourcesApiV1PersonaExampleReviewsSourcesGetError = (ErrorEnvelope);
+
+export type ListReviewsApiV1PersonaExampleReviewsGetData = {
+    query?: {
+        page?: number;
+        persona_id?: string;
+        state?: 'pending' | 'approved' | 'rejected';
+    };
+};
+
+export type ListReviewsApiV1PersonaExampleReviewsGetResponse = (SuccessEnvelope);
+
+export type ListReviewsApiV1PersonaExampleReviewsGetError = (ErrorEnvelope | HTTPValidationError);
+
+export type CreateReviewApiV1PersonaExampleReviewsPostData = {
+    body: ExampleCreate;
+};
+
+export type CreateReviewApiV1PersonaExampleReviewsPostResponse = (SuccessEnvelope);
+
+export type CreateReviewApiV1PersonaExampleReviewsPostError = (ErrorEnvelope | HTTPValidationError);
+
+export type ImportReviewsApiV1PersonaExampleReviewsImportPostData = {
+    body: ExampleImport;
+};
+
+export type ImportReviewsApiV1PersonaExampleReviewsImportPostResponse = (SuccessEnvelope);
+
+export type ImportReviewsApiV1PersonaExampleReviewsImportPostError = (ErrorEnvelope | HTTPValidationError);
+
+export type DecideReviewApiV1PersonaExampleReviewsReviewIdPutData = {
+    body: ExampleDecision;
+    path: {
+        review_id: string;
+    };
+};
+
+export type DecideReviewApiV1PersonaExampleReviewsReviewIdPutResponse = (SuccessEnvelope);
+
+export type DecideReviewApiV1PersonaExampleReviewsReviewIdPutError = (ErrorEnvelope | HTTPValidationError);

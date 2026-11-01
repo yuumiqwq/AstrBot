@@ -38,6 +38,14 @@ The Usage sidebar order is WebUI, AstrBot CLI, Built-in Commands, Plugins, AstrB
 | Usage → Agent Runner | Usage → Agent Execution Mode (URL unchanged) |
 | Usage → CLI Commands | Usage → AstrBot CLI (URL unchanged) |
 
+## Review Examples
+
+![Review examples](../images/persona-example-review.png)
+
+The **Review examples** sidebar entry adds complete dialogue examples to a persona's preset conversation. Select a target persona and an existing conversation, choose how many preceding exchanges each candidate should retain, then select **Read conversation**. Use **New candidate** to enter an example manually.
+
+You can edit both sides of each candidate. **Save** updates the pending candidate; **Approve and append** adds it to the selected persona's presets while retaining existing examples. Repeating an approval does not append the same candidate again. Rejected candidates remain available in the **Rejected** tab. Reading and reviewing examples do not call a language model.
+
 ## Accessing the Admin Panel
 
 After starting AstrBot, you can access the admin panel by visiting `http://localhost:6185` in your browser.

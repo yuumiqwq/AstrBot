@@ -183,6 +183,22 @@ class Persona(TimestampMixin, SQLModel, table=True):
     )
 
 
+class PersonaExampleReview(TimestampMixin, SQLModel, table=True):
+    """A human-reviewed dialogue snapshot awaiting inclusion in a persona."""
+
+    __tablename__: str = "persona_example_reviews"
+
+    review_id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    persona_id: str = Field(index=True)
+    conversation_id: str | None = Field(default=None, index=True)
+    source_title: str = Field(default="")
+    source_digest: str = Field(unique=True)
+    begin_dialogs: list[str] = Field(sa_type=JSON)
+    state: str = Field(default="pending", index=True)
+    revision: int = Field(default=1)
+    reviewed_by: str | None = Field(default=None)
+
+
 class CronJob(TimestampMixin, SQLModel, table=True):
     """Cron job definition for scheduler and WebUI management."""
 

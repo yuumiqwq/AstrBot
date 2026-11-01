@@ -167,6 +167,11 @@ const MainRoutes = {
       component: () => import('@/views/SessionManagementPage.vue')
     },
     {
+      name: 'PersonaExampleReview',
+      path: '/persona-example-review',
+      component: () => import('@/views/PersonaExampleReviewPage.vue')
+    },
+    {
       name: 'Persona',
       path: '/persona',
       component: () => import('@/views/PersonaPage.vue')

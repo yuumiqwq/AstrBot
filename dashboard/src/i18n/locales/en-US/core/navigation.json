@@ -64,5 +64,6 @@
     "system": "System Config"
   },
   "pluginView": "Plugin Views",
-  "pluginViewType": "Plugin View"
+  "pluginViewType": "Plugin View",
+  "personaExampleReview": "Review examples"
 }

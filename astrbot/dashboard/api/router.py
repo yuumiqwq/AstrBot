@@ -19,6 +19,7 @@ from .knowledge_bases import router as knowledge_bases_router
 from .live_chat import router as live_chat_router
 from .logs import router as logs_router
 from .open_api import router as open_api_router
+from .persona_examples import router as persona_examples_router
 from .personas import router as personas_router
 from .platform import router as platform_router
 from .plugins import router as plugins_router
@@ -60,6 +61,7 @@ def build_api_router() -> APIRouter:
         platform_router,
         t2i_router,
         personas_router,
+        persona_examples_router,
         updates_router,
         open_api_router,
         live_chat_router,

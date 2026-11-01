@@ -1,6 +1,7 @@
 import { markRaw, type Component } from 'vue';
 import {
   BookSearch,
+  ClipboardCheck,
   Bot,
   Box,
   Clock3,
@@ -93,6 +94,11 @@ const sidebarItem: menu[] = [
     title: 'core.navigation.persona',
     icon: markRaw(Heart),
     to: '/persona'
+  },
+  {
+    title: 'core.navigation.personaExampleReview',
+    icon: markRaw(ClipboardCheck),
+    to: '/persona-example-review'
   },
   {
     title: 'core.navigation.knowledgeBase',

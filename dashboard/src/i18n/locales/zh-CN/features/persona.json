@@ -156,5 +156,25 @@
     "description": "为 \"{name}\" 选择目标文件夹",
     "success": "移动成功",
     "error": "移动失败"
+  },
+  "review": {
+    "title": "审核写入",
+    "create": "新建候选",
+    "persona": "目标人格",
+    "conversation": "来源会话",
+    "contextRounds": "前文轮数",
+    "pending": "待审核",
+    "approved": "已写入",
+    "rejected": "已拒绝",
+    "assistant": "助手",
+    "user": "用户",
+    "addRound": "添加一轮",
+    "removeRound": "移除末轮",
+    "save": "保存",
+    "reject": "拒绝",
+    "approve": "通过并写入",
+    "cancel": "取消",
+    "saved": "已保存",
+    "import": "读取对话"
   }
 }

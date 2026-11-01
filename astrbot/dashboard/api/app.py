@@ -33,6 +33,7 @@ from astrbot.dashboard.services.knowledge_base_service import KnowledgeBaseServi
 from astrbot.dashboard.services.live_chat_service import LiveChatService
 from astrbot.dashboard.services.log_service import LogService
 from astrbot.dashboard.services.open_api_service import OpenApiService
+from astrbot.dashboard.services.persona_example_service import PersonaExampleService
 from astrbot.dashboard.services.persona_service import PersonaService
 from astrbot.dashboard.services.platform_service import PlatformService
 from astrbot.dashboard.services.plugin_page_service import PluginPageService
@@ -136,6 +137,7 @@ def create_dashboard_asgi_app(
         platforms=PlatformService(core_lifecycle),
         providers=ProviderConfigService(core_lifecycle),
         personas=PersonaService(core_lifecycle),
+        persona_examples=PersonaExampleService(core_lifecycle, db),
         plugins=PluginService(core_lifecycle, core_lifecycle.plugin_manager),
         plugin_pages=PluginPageService(
             core_lifecycle.plugin_manager,

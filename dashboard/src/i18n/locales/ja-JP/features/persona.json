@@ -156,5 +156,25 @@
     "description": "「{name}」の移動先フォルダーを選択してください",
     "success": "移動しました",
     "error": "移動に失敗しました"
+  },
+  "review": {
+    "title": "Review examples",
+    "create": "New candidate",
+    "persona": "Target persona",
+    "conversation": "Source conversation",
+    "contextRounds": "Prior rounds",
+    "pending": "Pending",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "assistant": "Assistant",
+    "user": "User",
+    "addRound": "Add round",
+    "removeRound": "Remove last round",
+    "save": "Save",
+    "reject": "Reject",
+    "approve": "Approve and append",
+    "cancel": "Cancel",
+    "saved": "Saved",
+    "import": "Read conversation"
   }
 }

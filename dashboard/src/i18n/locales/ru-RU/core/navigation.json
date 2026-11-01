@@ -64,5 +64,6 @@
         "system": "Системная конфигурация"
     },
     "pluginView": "Представления плагинов",
-    "pluginViewType": "Представление плагина"
+    "pluginViewType": "Представление плагина",
+    "personaExampleReview": "Review examples"
 }
