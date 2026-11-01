@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from astrbot.api.provider import LLMResponse, ProviderRequest
 from astrbot.core.agent.context.token_counter import EstimateTokenCounter
-from astrbot.core.agent.message import Message
+from astrbot.core.agent.message import Message, TextPart
 from astrbot.core.conversation_mgr import ConversationManager
 from astrbot.core.session_context import make_context_manager, prepare_request_context
 from astrbot.core.shared_qq_history import SharedQQHistory
@@ -68,6 +68,12 @@ class NativeContextTests(unittest.IsolatedAsyncioTestCase):
             contexts=[
                 {"role": "system", "content": "An earlier summary."},
                 {
+                    "role": "user",
+                    "content": "Earlier message",
+                    "_qq_time": stamp - 60,
+                    "_qq_sequence": 671,
+                },
+                {
                     "role": "assistant",
                     "content": "Example answer",
                     "_no_save": True,
@@ -83,21 +89,60 @@ class NativeContextTests(unittest.IsolatedAsyncioTestCase):
         )
         original = copy.deepcopy(req.contexts)
         await prepare_request_context(self.context, "test", self.provider, req)
-        self.assertEqual(req.contexts[0]["content"], original[0]["content"])
-        self.assertEqual(req.contexts[1]["content"], "Example answer")
+        note = "QQ历史消息的发送时间统一使用 Asia/Shanghai 时区。"
+        self.assertEqual(req.contexts[0]["content"], note)
+        self.assertEqual(req.contexts[1]["content"], original[0]["content"])
+        self.assertEqual(req.contexts[3]["content"], "Example answer")
         self.assertEqual(
-            req.contexts[2]["content"],
-            "[QQ消息发送时间：2026-11-01T05:21:27+08:00；Asia/Shanghai]\n晚安姐姐",
+            req.contexts[-1]["content"],
+            "[QQ消息发送时间：2026-11-01 05:21:27]\n晚安姐姐",
         )
-        self.assertNotIn("_qq_time", req.contexts[2])
+        self.assertNotIn("_qq_time", req.contexts[-1])
+        self.assertEqual(
+            sum(item["content"].count("Asia/Shanghai") for item in req.contexts), 1
+        )
         await prepare_request_context(self.context, "test", self.provider, req)
-        self.assertEqual(req.contexts[2]["content"].count("QQ消息发送时间"), 1)
+        self.assertEqual(req.contexts[-1]["content"].count("QQ消息发送时间"), 1)
+        self.assertEqual(sum(item["content"] == note for item in req.contexts), 1)
         storage = ProviderRequest(prompt="", contexts=original)
         await prepare_request_context(
             self.context, "test", self.provider, storage, preserve_history_metadata=True
         )
-        self.assertEqual(storage.contexts[2], original[2])
+        self.assertEqual(storage.contexts[-1], original[-1])
+        self.assertEqual(len(storage.contexts), len(original))
         self.provider.text_chat.assert_not_awaited()
+
+    async def test_existing_current_time_zone_avoids_an_extra_note(self):
+        for current_prompt, extra_parts in (
+            ("当前时间是: 2026-11-02T00:50:00+08:00", []),
+            ('{"contact_intent":{"timezone":"Asia/Shanghai"}}', []),
+            (
+                "Hello",
+                [
+                    TextPart(
+                        text='<companion_v2_context>\n{"conversation":{"current_local_time":{"timezone":"Asia/Shanghai"}}}'
+                    )
+                ],
+            ),
+        ):
+            with self.subTest(prompt=current_prompt):
+                req = ProviderRequest(
+                    prompt=current_prompt,
+                    contexts=[
+                        {
+                            "role": "assistant",
+                            "content": "晚安姐姐",
+                            "_qq_time": 1793481687,
+                        },
+                    ],
+                    extra_user_content_parts=extra_parts,
+                )
+                await prepare_request_context(self.context, "test", self.provider, req)
+                self.assertEqual(len(req.contexts), 1)
+                self.assertEqual(
+                    req.contexts[0]["content"],
+                    "[QQ消息发送时间：2026-11-01 05:21:27]\n晚安姐姐",
+                )
 
     async def test_resolves_session_settings_and_model_capacity(self):
         self.provider.provider_config = {}

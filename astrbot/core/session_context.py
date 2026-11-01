@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -90,6 +91,8 @@ async def prepare_request_context(
     source_history = req.contexts or []
     history = bind_checkpoint_messages(source_history)
     source_data = {}
+    source_offsets = set()
+    current = Message.model_validate(await req.assemble_context())
     try:
         local_zone = ZoneInfo(
             context.get_config(umo=session_id).get("timezone") or "Asia/Shanghai"
@@ -113,12 +116,56 @@ async def prepare_request_context(
         except (ValueError, OverflowError, OSError):
             continue
         source_data[id(message)] = original
-        annotation = f"[QQ消息发送时间：{local_time.isoformat()}；{local_zone.key}]\n"
+        source_offsets.add(local_time.utcoffset())
+        annotation = f"[QQ消息发送时间：{local_time:%Y-%m-%d %H:%M:%S}]\n"
         if isinstance(message.content, str):
             message.content = annotation + message.content
         elif isinstance(message.content, list):
             message.content = [TextPart(text=annotation), *message.content]
-    current = Message.model_validate(await req.assemble_context())
+    timezone_note = f"QQ历史消息的发送时间统一使用 {local_zone.key} 时区。"
+    timezone_header = next(
+        (
+            message
+            for message in history
+            if message.role == "system"
+            and message._no_save
+            and message.content == timezone_note
+        ),
+        None,
+    )
+    if source_data and timezone_header is None:
+        # Only current instructions/materials declare the time zone. Historical
+        # dialogue and preset examples may mention unrelated places and times.
+        current_text = (
+            current.content
+            if isinstance(current.content, str)
+            else "\n".join(
+                part.text
+                for part in (current.content or [])
+                if isinstance(part, TextPart)
+            )
+        )
+        current_materials = "\n".join(
+            (req.system_prompt or "", current_text, response_instruction)
+        )
+        timezone_present = local_zone.key in current_materials
+        for timestamp in re.findall(
+            r"(?:当前时间(?:是)?|current\s+time|current_time|current_local_time|local_now)"
+            r"\s*[\"\']?\s*[:：]\s*[\"\']?"
+            r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))",
+            current_materials,
+            re.IGNORECASE,
+        ):
+            try:
+                timezone_present |= source_offsets == {
+                    datetime.fromisoformat(timestamp.replace("Z", "+00:00")).utcoffset()
+                }
+            except ValueError:
+                continue
+        if not timezone_present:
+            timezone_header = Message(role="system", content=timezone_note)
+            timezone_header._no_save = True
+            history.insert(0, timezone_header)
     # Count response protocol tokens without imposing that protocol on summaries.
     if isinstance(current.content, str):
         current.content = [TextPart(text=current.content)]
@@ -148,6 +195,8 @@ async def prepare_request_context(
     req.contexts = []
     for message in processed:
         if message is system or message is current:
+            continue
+        if preserve_history_metadata and message is timezone_header:
             continue
         data = message.model_dump()
         if isinstance(message.content, list):
