@@ -99,7 +99,9 @@ def export_assets(args: argparse.Namespace) -> dict:
         if manifest_path.exists()
         else {"version": 1, "views": {}}
     )
-    manifest["views"][f"{args.plugin_id}/{args.view_name}"] = {
+    view_key = f"{args.plugin_id}/{args.view_name}"
+    manifest["views"][view_key] = {
+        **manifest["views"].get(view_key, {}),
         "release": release,
         "files": [asset["path"] for asset in assets],
     }

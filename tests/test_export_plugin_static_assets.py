@@ -61,8 +61,22 @@ def test_new_content_gets_new_release_and_preserves_old_snapshot(tmp_path):
         dashboard_dist=None,
     )
     first = exporter.export_assets(args)
+    manifest = json.loads(Path(first["candidate_manifest"]).read_text())
+    manifest["views"]["example/home"].update(
+        document_origin="https://house.example.test",
+        parent_origins=["https://dashboard.example.test"],
+    )
+    (data / "fish-static" / "manifest.json").write_text(json.dumps(manifest))
     repeated = exporter.export_assets(args)
     assert first["release"] == repeated["release"]
+    candidate = json.loads(Path(repeated["candidate_manifest"]).read_text())
+    assert (
+        candidate["views"]["example/home"]["document_origin"]
+        == "https://house.example.test"
+    )
+    assert candidate["views"]["example/home"]["parent_origins"] == [
+        "https://dashboard.example.test"
+    ]
     script.write_text("version two")
     second = exporter.export_assets(args)
     assert first["release"] != second["release"]
