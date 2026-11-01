@@ -627,6 +627,12 @@ export type PluginVersionSupportRequest = {
     astrbot_version?: string;
 };
 
+export type PresetUpdate = {
+    persona_id: string;
+    revision: string;
+    begin_dialogs: Array<(string)>;
+};
+
 export type ProviderCapability = 'chat' | 'agent' | 'stt' | 'tts' | 'embedding' | 'rerank' | 'decision';
 
 export type ProviderConfigRequest = {
@@ -4034,3 +4040,21 @@ export type DecideReviewApiV1PersonaExampleReviewsReviewIdPutData = {
 export type DecideReviewApiV1PersonaExampleReviewsReviewIdPutResponse = (SuccessEnvelope);
 
 export type DecideReviewApiV1PersonaExampleReviewsReviewIdPutError = (ErrorEnvelope | HTTPValidationError);
+
+export type GetPresetsApiV1PersonaExampleReviewsPresetsGetData = {
+    query: {
+        persona_id: string;
+    };
+};
+
+export type GetPresetsApiV1PersonaExampleReviewsPresetsGetResponse = (SuccessEnvelope);
+
+export type GetPresetsApiV1PersonaExampleReviewsPresetsGetError = (ErrorEnvelope | HTTPValidationError);
+
+export type EditPresetsApiV1PersonaExampleReviewsPresetsPutData = {
+    body: PresetUpdate;
+};
+
+export type EditPresetsApiV1PersonaExampleReviewsPresetsPutResponse = (SuccessEnvelope);
+
+export type EditPresetsApiV1PersonaExampleReviewsPresetsPutError = (ErrorEnvelope | HTTPValidationError);

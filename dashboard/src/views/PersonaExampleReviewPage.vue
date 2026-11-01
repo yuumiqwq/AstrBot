@@ -3,6 +3,7 @@
     <div class="d-flex align-center justify-space-between mb-6 ga-3 flex-wrap">
       <h1 class="text-h3">{{ label("title") }}</h1>
       <v-btn
+        v-if="state !== 'presets'"
         variant="tonal"
         :disabled="!personaId || busy"
         @click="
@@ -13,7 +14,7 @@
       >
     </div>
     <v-card variant="outlined" class="pa-4 mb-5">
-      <div class="review-controls">
+      <div :class="state === 'presets' ? 'preset-controls' : 'review-controls'">
         <v-select
           v-model="personaId"
           :items="personas"
@@ -24,6 +25,7 @@
           :disabled="busy"
         />
         <v-select
+          v-if="state !== 'presets'"
           v-model="conversationId"
           :items="sources"
           item-title="label"
@@ -33,6 +35,7 @@
           :disabled="busy"
         />
         <v-text-field
+          v-if="state !== 'presets'"
           v-model.number="contextRounds"
           type="number"
           min="0"
@@ -42,6 +45,7 @@
           :disabled="busy"
         />
         <v-btn
+          v-if="state !== 'presets'"
           variant="tonal"
           :disabled="!personaId || !conversationId || busy"
           @click="importConversation"
@@ -55,8 +59,102 @@
       }}</v-tab>
     </v-tabs>
     <v-progress-linear v-if="loading" indeterminate class="mb-4" />
+    <template v-if="state === 'presets'">
+      <div v-if="presetBudget" class="mb-4">
+        <div class="d-flex justify-space-between flex-wrap ga-2 mb-2">
+          <span
+            >{{ label("capacity") }} {{ presetPercent.toFixed(2) }}% /
+            {{ presetBudget.limit_percent }}%</span
+          >
+          <span
+            >{{ label("remaining") }}
+            {{
+              Math.max(
+                0,
+                presetBudget.limit_tokens - presetTokens,
+              ).toLocaleString()
+            }}
+            tokens</span
+          >
+        </div>
+        <v-progress-linear
+          :model-value="presetPercent"
+          :max="presetBudget.limit_percent"
+          :color="presetOverBudget ? 'error' : 'primary'"
+          rounded
+          height="6"
+        />
+        <v-alert
+          v-if="presetOverBudget"
+          type="error"
+          variant="tonal"
+          class="mt-3"
+        >
+          {{ label("overBudget") }}
+        </v-alert>
+      </div>
+      <div class="d-flex ga-2 mb-4">
+        <v-btn
+          variant="text"
+          color="error"
+          :disabled="busy || !selectedPresets.length"
+          @click="removePresets(selectedPresets)"
+          >{{ label("deleteSelected") }}</v-btn
+        >
+        <v-spacer />
+        <v-btn
+          variant="tonal"
+          :disabled="busy || loading || !personaId || presetOverBudget"
+          @click="savePresets"
+          >{{ label("save") }}</v-btn
+        >
+      </div>
+      <v-card
+        v-for="round in presetPage"
+        :key="round"
+        variant="outlined"
+        class="mb-4 pa-4"
+      >
+        <div class="d-flex align-center mb-2">
+          <v-checkbox
+            v-model="selectedPresets"
+            :value="round"
+            :label="String(round + 1)"
+            :aria-label="label('selectRound')"
+            hide-details
+            density="compact"
+            :disabled="busy"
+          />
+          <v-btn
+            variant="text"
+            color="error"
+            :disabled="busy"
+            @click="removePresets([round])"
+          >
+            {{ label("deleteRound") }}
+          </v-btn>
+        </div>
+        <v-textarea
+          v-model="presetDialogs[round * 2]"
+          :label="label('user')"
+          auto-grow
+          rows="2"
+          hide-details
+          class="mb-2"
+          :disabled="busy"
+        />
+        <v-textarea
+          v-model="presetDialogs[round * 2 + 1]"
+          :label="label('assistant')"
+          auto-grow
+          rows="2"
+          hide-details
+          :disabled="busy"
+        />
+      </v-card>
+    </template>
     <v-card
-      v-for="review in reviews"
+      v-for="review in state === 'presets' ? [] : reviews"
       :key="review.review_id"
       variant="outlined"
       class="mb-4 pa-4"
@@ -168,7 +266,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "@/i18n/composables";
 import { apiV1Client } from "@/api/http";
 
@@ -190,20 +288,64 @@ interface Source {
 const { t } = useI18n();
 const label = (key: string) => t(`features.persona.review.${key}`);
 const endpoint = "/persona-example-reviews";
-const states: ReviewState[] = ["pending", "approved", "rejected"];
+const states = ["pending", "presets", "approved", "rejected"] as const;
 const personas = ref<{ persona_id: string }[]>([]);
 const sources = ref<Source[]>([]);
 const personaId = ref("");
 const conversationId = ref("");
 const contextRounds = ref(2);
 const reviews = ref<Review[]>([]);
-const state = ref<ReviewState>("pending");
+const state = ref<ReviewState | "presets">("pending");
 const page = ref(1);
 const total = ref(0);
 const loading = ref(false);
 const busy = ref(false);
 const newDialog = ref(false);
 const newDialogs = ref(["", ""]);
+const presetDialogs = ref<string[]>([]);
+const presetRevision = ref("");
+const selectedPresets = ref<number[]>([]);
+const presetBudget = ref<{
+  context_tokens: number;
+  limit_percent: number;
+  limit_tokens: number;
+} | null>(null);
+const presetTokens = computed(() =>
+  presetDialogs.value.reduce((total, value) => {
+    let chinese = 0;
+    let emoji = 0;
+    const characters = Array.from(value);
+    for (const character of characters) {
+      if (character >= "\u4e00" && character <= "\u9fff") chinese++;
+      else if (
+        /[\u200d\u2600-\u27bf\ufe00-\ufe0f\u{1f000}-\u{1faff}]/u.test(character)
+      )
+        emoji++;
+    }
+    return (
+      total +
+      Math.floor(
+        chinese * 0.6 + emoji * 2 + (characters.length - chinese - emoji) * 0.3,
+      )
+    );
+  }, 0),
+);
+const presetPercent = computed(() =>
+  presetBudget.value
+    ? (presetTokens.value * 100) / presetBudget.value.context_tokens
+    : 0,
+);
+const presetOverBudget = computed(() =>
+  Boolean(
+    presetBudget.value && presetTokens.value > presetBudget.value.limit_tokens,
+  ),
+);
+const presetPage = computed(() =>
+  Array.from(
+    { length: presetDialogs.value.length / 2 },
+    (_, index) => index,
+  ).slice((page.value - 1) * 20, page.value * 20),
+);
 const notice = ref("");
 const noticeOpen = ref(false);
 const noticeError = ref(false);
@@ -225,6 +367,18 @@ async function loadReviews() {
   const current = ++requestId;
   loading.value = true;
   try {
+    if (state.value === "presets") {
+      const response = await apiV1Client.get(`${endpoint}/presets`, {
+        params: { persona_id: personaId.value },
+      });
+      if (current !== requestId) return;
+      presetDialogs.value = response.data.data.begin_dialogs;
+      presetRevision.value = response.data.data.revision;
+      presetBudget.value = response.data.data.budget;
+      selectedPresets.value = [];
+      total.value = presetDialogs.value.length / 2;
+      return;
+    }
     const response = await apiV1Client.get(endpoint, {
       params: {
         persona_id: personaId.value,
@@ -239,6 +393,34 @@ async function loadReviews() {
     if (current === requestId) showNotice(error);
   } finally {
     if (current === requestId) loading.value = false;
+  }
+}
+
+function removePresets(rounds: number[]) {
+  const selected = new Set(rounds);
+  presetDialogs.value = presetDialogs.value.filter(
+    (_, index) => !selected.has(Math.floor(index / 2)),
+  );
+  selectedPresets.value = [];
+  total.value = presetDialogs.value.length / 2;
+  page.value = Math.min(page.value, Math.max(1, Math.ceil(total.value / 20)));
+}
+
+async function savePresets() {
+  busy.value = true;
+  try {
+    const response = await apiV1Client.put(`${endpoint}/presets`, {
+      persona_id: personaId.value,
+      revision: presetRevision.value,
+      begin_dialogs: presetDialogs.value,
+    });
+    presetRevision.value = response.data.data.revision;
+    presetBudget.value = response.data.data.budget;
+    showNotice();
+  } catch (error) {
+    showNotice(error);
+  } finally {
+    busy.value = false;
   }
 }
 
@@ -303,7 +485,7 @@ watch([personaId, state], () => {
   void loadReviews();
 });
 watch(page, () => {
-  void loadReviews();
+  if (state.value !== "presets") void loadReviews();
 });
 onMounted(async () => {
   try {

@@ -8,12 +8,84 @@ from uuid import uuid4
 from sqlmodel import desc, func, select, text
 
 from astrbot.core.db.po import ConversationV2, Persona, PersonaExampleReview
+from astrbot.dashboard.services.persona_preset_budget import preset_budget
 
 
 class PersonaExampleService:
     def __init__(self, core_lifecycle, db):
+        self.core_lifecycle = core_lifecycle
         self.persona_mgr = core_lifecycle.persona_mgr
         self.db = db
+
+    async def presets(self, persona_id: str) -> dict:
+        """Read current persona examples with a content revision.
+
+        Args:
+            persona_id: Persona selected in the dashboard.
+
+        Returns:
+            Current example strings and their revision.
+
+        Raises:
+            ValueError: The persona does not exist.
+        """
+        persona = await self.db.get_persona_by_id(persona_id)
+        if persona is None:
+            raise ValueError("人格不存在")
+        dialogs = list(persona.begin_dialogs or [])
+        revision = hashlib.sha256(
+            json.dumps(dialogs, ensure_ascii=False).encode()
+        ).hexdigest()
+        return {
+            "begin_dialogs": dialogs,
+            "revision": revision,
+            "budget": await preset_budget(self.core_lifecycle, dialogs),
+        }
+
+    async def update_presets(
+        self, persona_id: str, revision: str, begin_dialogs: list[str]
+    ) -> dict:
+        """Edit or remove existing examples without overwriting concurrent approval.
+
+        Args:
+            persona_id: Persona selected in the dashboard.
+            revision: Revision observed before editing.
+            begin_dialogs: Remaining edited pairs; an empty list removes all pairs.
+
+        Returns:
+            Saved example strings and their new revision.
+
+        Raises:
+            ValueError: The persona is missing, changed, or has incomplete pairs.
+        """
+        if len(begin_dialogs) % 2:
+            raise ValueError("预设对话数量必须为偶数")
+        await preset_budget(self.core_lifecycle, begin_dialogs, enforce=True)
+        async with self.db.get_db() as session:
+            if session.bind.dialect.name == "sqlite":
+                await session.execute(text("BEGIN IMMEDIATE"))
+            persona = (
+                await session.execute(
+                    select(Persona)
+                    .where(Persona.persona_id == persona_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if persona is None:
+                raise ValueError("人格不存在")
+            current = list(persona.begin_dialogs or [])
+            actual = hashlib.sha256(
+                json.dumps(current, ensure_ascii=False).encode()
+            ).hexdigest()
+            if actual != revision:
+                raise ValueError("预设对话已更新，请刷新后重试")
+            persona.begin_dialogs = begin_dialogs
+            persona.updated_at = datetime.now(timezone.utc)
+            session.add(persona)
+            await session.commit()
+        self.persona_mgr.personas = await self.persona_mgr.get_all_personas()
+        self.persona_mgr.get_v3_persona_data()
+        return await self.presets(persona_id)
 
     async def sources(self) -> list[dict]:
         async with self.db.get_db() as session:
@@ -227,6 +299,9 @@ class PersonaExampleService:
                         for i in range(0, len(existing), 2)
                     )
                     if not already_present:
+                        await preset_budget(
+                            self.core_lifecycle, existing + begin_dialogs, enforce=True
+                        )
                         persona.begin_dialogs = existing + begin_dialogs
                         persona.updated_at = datetime.now(timezone.utc)
                         session.add(persona)

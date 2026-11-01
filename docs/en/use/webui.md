@@ -46,6 +46,12 @@ The **Review examples** sidebar entry adds complete dialogue examples to a perso
 
 You can edit both sides of each candidate. **Save** updates the pending candidate; **Approve and append** adds it to the selected persona's presets while retaining existing examples. Repeating an approval does not append the same candidate again. Rejected candidates remain available in the **Rejected** tab. Reading and reviewing examples do not call a language model.
 
+The **Preset dialogues** tab shows all examples currently used by the persona, including direct imports and approved candidates. Edit either side, delete one exchange, or select several exchanges and use **Delete selected**, then select **Save**. Pagination preserves unsaved edits. Saving checks the content revision so concurrent edits or approvals are not overwritten. The approved tab retains review records; **Preset dialogues** represents the examples currently in use.
+
+![Preset dialogue management](../images/persona-preset-management.png)
+
+The page displays estimated token usage against the current default chat model's context capacity, with a 15% preset limit. Capacity follows the provider configuration, model metadata, or the configured context-compression fallback. Approval, preset editing, and the original persona create/update APIs enforce the combined allowance before writing. Oversized candidates remain pending, and the saved persona remains unchanged.
+
 ## Accessing the Admin Panel
 
 After starting AstrBot, you can access the admin panel by visiting `http://localhost:6185` in your browser.

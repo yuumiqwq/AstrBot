@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from astrbot.core.core_lifecycle import AstrBotCoreLifecycle
 from astrbot.core.sentinels import NOT_GIVEN
+from astrbot.dashboard.services.persona_preset_budget import preset_budget
 
 
 class PersonaServiceError(Exception):
@@ -10,6 +11,7 @@ class PersonaServiceError(Exception):
 
 class PersonaService:
     def __init__(self, core_lifecycle: AstrBotCoreLifecycle) -> None:
+        self.core_lifecycle = core_lifecycle
         self.persona_mgr = core_lifecycle.persona_mgr
 
     async def list_personas(
@@ -61,6 +63,7 @@ class PersonaService:
             raise PersonaServiceError("系统提示词不能为空")
 
         self._validate_begin_dialogs(begin_dialogs)
+        await preset_budget(self.core_lifecycle, begin_dialogs or [], enforce=True)
 
         persona = await self.persona_mgr.create_persona(
             persona_id=persona_id,
@@ -100,6 +103,7 @@ class PersonaService:
 
         if begin_dialogs is not None:
             self._validate_begin_dialogs(begin_dialogs)
+            await preset_budget(self.core_lifecycle, begin_dialogs, enforce=True)
 
         update_kwargs = {
             "persona_id": persona_id,

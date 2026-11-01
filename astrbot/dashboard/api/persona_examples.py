@@ -41,6 +41,20 @@ class ExampleImport(BaseModel):
     context_rounds: int = Field(default=2, ge=0, le=10)
 
 
+class PresetUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    persona_id: str = Field(min_length=1)
+    revision: str = Field(min_length=64, max_length=64)
+    begin_dialogs: list[str]
+
+    @field_validator("begin_dialogs")
+    @classmethod
+    def validate_pairs(cls, value: list[str]) -> list[str]:
+        if len(value) % 2:
+            raise ValueError("预设对话数量必须为偶数")
+        return value
+
+
 def get_service(request: Request) -> PersonaExampleService:
     return request.app.state.services.persona_examples
 
@@ -86,6 +100,30 @@ async def import_reviews(
         return ok(await service.import_conversation(**payload.model_dump()))
     except ValueError as exc:
         raise ApiError(str(exc)) from exc
+
+
+@router.get("/presets")
+async def get_presets(
+    persona_id: str = Query(min_length=1),
+    _username: str = Depends(require_dashboard_user),
+    service: PersonaExampleService = Depends(get_service),
+):
+    try:
+        return ok(await service.presets(persona_id))
+    except ValueError as exc:
+        raise ApiError(str(exc)) from exc
+
+
+@router.put("/presets")
+async def edit_presets(
+    payload: PresetUpdate,
+    _username: str = Depends(require_dashboard_user),
+    service: PersonaExampleService = Depends(get_service),
+):
+    try:
+        return ok(await service.update_presets(**payload.model_dump()))
+    except ValueError as exc:
+        raise ApiError(str(exc), status_code=409) from exc
 
 
 @router.put("/{review_id}")

@@ -175,6 +175,13 @@
     "approve": "通过并写入",
     "cancel": "取消",
     "saved": "已保存",
-    "import": "读取对话"
+    "import": "读取对话",
+    "presets": "预设对话",
+    "deleteSelected": "删除所选",
+    "deleteRound": "删除此轮",
+    "selectRound": "选择此轮",
+    "capacity": "上下文占用",
+    "remaining": "预设剩余额度",
+    "overBudget": "预设对话超出 15% 上限，请减少内容后保存。"
   }
 }

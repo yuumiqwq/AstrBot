@@ -175,6 +175,13 @@
     "approve": "Approve and append",
     "cancel": "Cancel",
     "saved": "Saved",
-    "import": "Read conversation"
+    "import": "Read conversation",
+    "presets": "Preset dialogues",
+    "deleteSelected": "Delete selected",
+    "deleteRound": "Delete exchange",
+    "selectRound": "Select exchange",
+    "capacity": "Context usage",
+    "remaining": "Preset allowance remaining",
+    "overBudget": "Preset dialogues exceed the 15% limit. Reduce their size before saving."
   }
 }

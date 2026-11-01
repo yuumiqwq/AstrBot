@@ -5597,6 +5597,62 @@ paths:
       security:
       - BearerAuth: []
 
+  /api/v1/persona-example-reviews/presets:
+    get:
+      tags:
+      - Persona example reviews
+      summary: Get Presets
+      operationId: get_presets_api_v1_persona_example_reviews_presets_get
+      parameters:
+      - name: persona_id
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: Persona Id
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+      security:
+      - BearerAuth: []
+    put:
+      tags:
+      - Persona example reviews
+      summary: Edit Presets
+      operationId: edit_presets_api_v1_persona_example_reviews_presets_put
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresetUpdate'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+      security:
+      - BearerAuth: []
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -5825,6 +5881,29 @@ components:
         type: string
 
   schemas:
+    PresetUpdate:
+      properties:
+        persona_id:
+          type: string
+          minLength: 1
+          title: Persona Id
+        revision:
+          type: string
+          maxLength: 64
+          minLength: 64
+          title: Revision
+        begin_dialogs:
+          items:
+            type: string
+          type: array
+          title: Begin Dialogs
+      additionalProperties: false
+      type: object
+      required:
+      - persona_id
+      - revision
+      - begin_dialogs
+      title: PresetUpdate
     ExampleCreate:
       properties:
         begin_dialogs:

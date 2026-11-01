@@ -324,6 +324,7 @@ async function savePersona() {
     return;
   }
   for (let index = 0; index < personaForm.begin_dialogs.length; index += 1) {
+    if (index === 0 && personaForm.begin_dialogs[1]?.trim()) continue;
     if (!personaForm.begin_dialogs[index]?.trim()) {
       const dialogType =
         index % 2 === 0 ? tm("form.userMessage") : tm("form.assistantMessage");
@@ -398,6 +399,7 @@ function removeDialog(index) {
 }
 
 function getDialogRules(index) {
+  if (index === 0) return [];
   const dialogType =
     index % 2 === 0 ? tm("form.userMessage") : tm("form.assistantMessage");
   return [
