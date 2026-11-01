@@ -16,6 +16,8 @@ centralizes the in-module usages; keep it in sync with those call sites if the
 reserved id ever changes.
 """
 
+PRESET_DIALOGUE_STYLE_INSTRUCTION = "只参考预设对话中 assistant 一方的措辞与口癖，user 一方用于理解对话情境和对方的表达，不作为自己的风格范例。"
+
 
 DEFAULT_PERSONALITY = Personality(
     prompt="You are a helpful and friendly assistant.",
@@ -480,6 +482,16 @@ class PersonaManager:
                         },
                     )
                     user_turn = not user_turn
+
+            if bd_processed:
+                bd_processed.insert(
+                    0,
+                    {
+                        "role": "system",
+                        "content": PRESET_DIALOGUE_STYLE_INSTRUCTION,
+                        "_no_save": True,
+                    },
+                )
 
             try:
                 persona = Personality(
