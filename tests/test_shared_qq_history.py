@@ -1,6 +1,7 @@
 """Verify source synchronization and native context management offline."""
 
 import copy
+import hashlib
 import json
 import unittest
 from datetime import datetime, timezone
@@ -58,6 +59,44 @@ class NativeContextTests(unittest.IsolatedAsyncioTestCase):
         original = list(req.contexts)
         await prepare_request_context(self.context, "test", self.provider, req)
         self.assertEqual(req.contexts, original)
+        self.provider.text_chat.assert_not_awaited()
+
+    async def test_source_times_are_rendered_without_marking_presets_or_summaries(self):
+        stamp = 1793481687
+        req = ProviderRequest(
+            prompt="Now",
+            contexts=[
+                {"role": "system", "content": "An earlier summary."},
+                {
+                    "role": "assistant",
+                    "content": "Example answer",
+                    "_no_save": True,
+                    "_qq_time": stamp,
+                },
+                {
+                    "role": "assistant",
+                    "content": "晚安姐姐",
+                    "_qq_time": stamp,
+                    "_qq_sequence": 672,
+                },
+            ],
+        )
+        original = copy.deepcopy(req.contexts)
+        await prepare_request_context(self.context, "test", self.provider, req)
+        self.assertEqual(req.contexts[0]["content"], original[0]["content"])
+        self.assertEqual(req.contexts[1]["content"], "Example answer")
+        self.assertEqual(
+            req.contexts[2]["content"],
+            "[QQ消息发送时间：2026-11-01T05:21:27+08:00；Asia/Shanghai]\n晚安姐姐",
+        )
+        self.assertNotIn("_qq_time", req.contexts[2])
+        await prepare_request_context(self.context, "test", self.provider, req)
+        self.assertEqual(req.contexts[2]["content"].count("QQ消息发送时间"), 1)
+        storage = ProviderRequest(prompt="", contexts=original)
+        await prepare_request_context(
+            self.context, "test", self.provider, storage, preserve_history_metadata=True
+        )
+        self.assertEqual(storage.contexts[2], original[2])
         self.provider.text_chat.assert_not_awaited()
 
     async def test_resolves_session_settings_and_model_capacity(self):
@@ -337,6 +376,72 @@ class SharedHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("message_seq", self.calls[0])
         update.assert_not_awaited()
         save.assert_not_awaited()
+
+    async def test_time_backfill_preserves_summary_and_restores_single_record_probe(
+        self,
+    ):
+        await self.manager.get_conversation(self.umo, "conversation")
+        self.db.conversation.content = [
+            {"role": "system", "content": "Saved summary."},
+            *[
+                {"role": item["role"], "content": item["content"]}
+                for item in self.db.conversation.content[-5:]
+            ],
+        ]
+        original = copy.deepcopy(self.db.conversation.content)
+        self.db.state["history_digest"] = hashlib.sha256(
+            json.dumps(original, sort_keys=True).encode()
+        ).hexdigest()
+        self.db.state.pop("timestamp_version")
+        self.calls.clear()
+        first = await self.manager.get_conversation(self.umo, "conversation")
+        result = json.loads(first.history)
+        self.assertEqual(
+            [
+                {k: v for k, v in item.items() if not k.startswith("_qq_")}
+                for item in result
+            ],
+            original,
+        )
+        self.assertNotIn("_qq_time", result[0])
+        self.assertEqual(result[-1]["_qq_time"], 129)
+        self.assertGreater(len(self.calls), 1)
+        self.assertEqual(self.db.state["timestamp_version"], 1)
+        self.provider.text_chat.assert_not_awaited()
+        self.calls.clear()
+        self.assertEqual(
+            (await self.manager.get_conversation(self.umo, "conversation")).history,
+            first.history,
+        )
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0]["count"], 1)
+
+    async def test_prepared_reply_does_not_persist_time_prefixes_or_invalidate_cursor(
+        self,
+    ):
+        first = await self.manager.get_conversation(self.umo, "conversation")
+        original = json.loads(first.history)
+        request = ProviderRequest(prompt="A new turn", contexts=copy.deepcopy(original))
+        await prepare_request_context(self.context, self.umo, self.provider, request)
+        self.assertIn("QQ消息发送时间", request.contexts[-1]["content"])
+        await self.manager.update_conversation(
+            self.umo,
+            "conversation",
+            history=[
+                *request.contexts,
+                {"role": "assistant", "content": "Mock generated reply"},
+            ],
+        )
+        self.calls.clear()
+        second = await self.manager.get_conversation(self.umo, "conversation")
+        self.assertEqual(json.loads(second.history), original)
+        self.assertEqual(
+            self.db.state["history_digest"],
+            hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest(),
+        )
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0]["count"], 1)
+        self.provider.text_chat.assert_not_awaited()
 
     async def test_new_records_paginate_only_to_previous_cursor(self):
         await self.manager.get_conversation(self.umo, "conversation")

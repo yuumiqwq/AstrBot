@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import copy
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from astrbot.core.agent.context.config import ContextConfig
 from astrbot.core.agent.context.manager import ContextManager
@@ -66,6 +69,8 @@ async def prepare_request_context(
     provider: Any,
     req: Any,
     response_instruction: str = "",
+    *,
+    preserve_history_metadata: bool = False,
 ):
     """Manage a full request using AstrBot's native token and turn policies.
 
@@ -75,12 +80,44 @@ async def prepare_request_context(
         provider: Chat provider used by the request.
         req: Provider request to update in place.
         response_instruction: Optional output protocol applied after summarization.
+        preserve_history_metadata: Restore original source text and QQ metadata
+            after length processing when persisting synchronized history.
 
     Raises:
         ValueError: If the active request is removed by context processing.
     """
     manager = await make_context_manager(context, session_id, provider)
-    history = bind_checkpoint_messages(req.contexts or [])
+    source_history = req.contexts or []
+    history = bind_checkpoint_messages(source_history)
+    source_data = {}
+    try:
+        local_zone = ZoneInfo(
+            context.get_config(umo=session_id).get("timezone") or "Asia/Shanghai"
+        )
+    except (ValueError, ZoneInfoNotFoundError):
+        local_zone = ZoneInfo("Asia/Shanghai")
+    entries = (item for item in source_history if item.get("role") != "_checkpoint")
+    for message, original in zip(history, entries):
+        sent_at = original.get("_qq_time")
+        if (
+            original.get("_no_save")
+            or message.role not in {"user", "assistant"}
+            or type(sent_at) is not int
+            or sent_at <= 0
+        ):
+            continue
+        try:
+            local_time = datetime.fromtimestamp(sent_at, timezone.utc).astimezone(
+                local_zone
+            )
+        except (ValueError, OverflowError, OSError):
+            continue
+        source_data[id(message)] = original
+        annotation = f"[QQ消息发送时间：{local_time.isoformat()}；{local_zone.key}]\n"
+        if isinstance(message.content, str):
+            message.content = annotation + message.content
+        elif isinstance(message.content, list):
+            message.content = [TextPart(text=annotation), *message.content]
     current = Message.model_validate(await req.assemble_context())
     # Count response protocol tokens without imposing that protocol on summaries.
     if isinstance(current.content, str):
@@ -117,6 +154,12 @@ async def prepare_request_context(
             data["content"] = [
                 part.model_dump_for_context() for part in message.content
             ]
+        if preserve_history_metadata and id(message) in source_data:
+            original = source_data[id(message)]
+            data["content"] = copy.deepcopy(original["content"])
+            data["_qq_time"] = original["_qq_time"]
+            if "_qq_sequence" in original:
+                data["_qq_sequence"] = original["_qq_sequence"]
         if message._no_save:
             data["_no_save"] = True
         req.contexts.append(data)

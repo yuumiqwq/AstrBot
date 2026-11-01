@@ -179,8 +179,48 @@ class SharedQQHistory:
                     json.dumps(stable, ensure_ascii=False, sort_keys=True).encode()
                 ).hexdigest()
             )
+            sent_at = message.get("time")
+            if type(sent_at) is int and sent_at > 0:
+                entry["_qq_time"] = sent_at
+                entry["_qq_sequence"] = int(message.get("real_seq") or 0)
             history.append(entry)
         return history, fingerprints
+
+    @staticmethod
+    def merge_source_timestamps(history: list[dict], source: list[dict]) -> list[dict]:
+        """Attach source times to retained messages without replacing summaries.
+
+        Args:
+            history: Already retained native history, including possible summaries.
+            source: Chronological normalized QQ records up to the saved cursor.
+
+        Returns:
+            Original history with time metadata on matching retained messages.
+        """
+        result = [dict(item) for item in history]
+        positions: dict[tuple, list[int]] = {}
+        for index, item in enumerate(source):
+            if isinstance(item.get("content"), str):
+                positions.setdefault((item["role"], item["content"]), []).append(index)
+        before = len(source)
+        for item in reversed(result):
+            if (
+                item.get("_no_save")
+                or item.get("role") not in {"user", "assistant"}
+                or not isinstance(item.get("content"), str)
+            ):
+                continue
+            matches = positions.get((item["role"], item["content"]), [])
+            while matches and matches[-1] >= before:
+                matches.pop()
+            if not matches:
+                continue
+            before = matches.pop()
+            original = source[before]
+            for key in ("_qq_time", "_qq_sequence"):
+                if key in original:
+                    item[key] = original[key]
+        return result
 
     def record_cursor(self, record: dict) -> dict:
         """Identify a source position independently of QQ's temporary short IDs.
@@ -231,12 +271,27 @@ class SharedQQHistory:
             )
             previous = state.get("fingerprints", []) if valid else []
             last_record = state.get("last_record") if valid else None
+            needs_times = valid and state.get("timestamp_version") != 1
             records = await self.read_records(
                 session_id,
                 policy,
                 before_message_id,
-                after_sequence=last_record["sequence"] if last_record else None,
+                after_sequence=last_record["sequence"]
+                if last_record and not needs_times
+                else None,
             )
+            retained = current
+            if needs_times:
+                originals = [
+                    record
+                    for record in records
+                    if not last_record
+                    or int(record.get("real_seq") or 0) <= last_record["sequence"]
+                ]
+                retained = self.merge_source_timestamps(
+                    current, self.normalize_records(originals)[0]
+                )
+            newest_record = self.record_cursor(records[-1]) if records else last_record
             if last_record:
                 anchor = next(
                     (
@@ -252,10 +307,10 @@ class SharedQQHistory:
                         for record in records
                         if int(record.get("real_seq") or 0) > last_record["sequence"]
                     ]
-                    if not records:
+                    if not records and not needs_times:
                         return conversation
                     history, fingerprints = self.normalize_records(records)
-                    history = [*current, *history]
+                    history = [*retained, *history]
                     fingerprints = [*previous, *fingerprints]
                 else:
                     # A removed/changed cursor or an older incoming request
@@ -264,17 +319,27 @@ class SharedQQHistory:
                     records = await self.read_records(
                         session_id, policy, before_message_id
                     )
+                    newest_record = self.record_cursor(records[-1]) if records else None
                     history, fingerprints = self.normalize_records(records)
             else:
                 history, fingerprints = self.normalize_records(records)
                 # Upgrade the previous full-scan state without losing a summary.
                 if valid and fingerprints[: len(previous)] == previous:
-                    history = [*current, *history[len(previous) :]]
+                    history = [*retained, *history[len(previous) :]]
             if history != current:
-                provider = await self.context.get_using_provider_async(umo=session_id)
-                req = ProviderRequest(prompt="", contexts=history, system_prompt="")
-                await prepare_request_context(self.context, session_id, provider, req)
-                history = req.contexts
+                if history != retained:
+                    provider = await self.context.get_using_provider_async(
+                        umo=session_id
+                    )
+                    req = ProviderRequest(prompt="", contexts=history, system_prompt="")
+                    await prepare_request_context(
+                        self.context,
+                        session_id,
+                        provider,
+                        req,
+                        preserve_history_metadata=True,
+                    )
+                    history = req.contexts
                 await db.update_conversation(cid=cid, content=history, token_usage=0)
             await db.insert_preference_or_update(
                 "conversation",
@@ -283,7 +348,8 @@ class SharedQQHistory:
                 {
                     "policy": policy,
                     "fingerprints": fingerprints,
-                    "last_record": self.record_cursor(records[-1]) if records else None,
+                    "last_record": newest_record,
+                    "timestamp_version": 1,
                     "history_digest": hashlib.sha256(
                         json.dumps(history, sort_keys=True).encode()
                     ).hexdigest(),
