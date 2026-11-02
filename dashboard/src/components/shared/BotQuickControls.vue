@@ -8,18 +8,18 @@
     <v-alert v-if="controlsError" type="error" variant="tonal" density="compact" class="mb-3">
       {{ controlsError }}
     </v-alert>
-    <div class="quick-controls__grid">
-      <div class="quick-controls__reply">
-        <v-select v-model="sessionKey" :items="sessions" item-value="session_key" :item-title="sessionTitle"
-          :label="tm('quickControls.session')" density="compact" variant="outlined" hide-details
-          :disabled="loading || savingReply" />
+    <v-select v-model="sessionKey" :items="sessions" item-value="session_key" :item-title="sessionTitle"
+      class="quick-controls__session" :label="tm('quickControls.session')" density="compact" variant="outlined"
+      hide-details :disabled="loading || savingReply" />
+    <div class="quick-controls__actions">
+      <div class="quick-controls__switches">
         <v-switch :model-value="replyEnabled" :label="tm('quickControls.reply')" color="primary"
           :disabled="loading || savingReply || !selectedSession?.native || !controlsReady" :loading="savingReply"
           hide-details inset data-testid="quick-reply-switch" @update:model-value="setReply" />
+        <v-switch :model-value="proactiveEnabled" :label="tm('quickControls.proactive')" color="primary"
+          :disabled="loading || savingProactive || !contact" :loading="savingProactive" hide-details inset
+          data-testid="quick-proactive-switch" @update:model-value="setProactive" />
       </div>
-      <v-switch :model-value="proactiveEnabled" :label="tm('quickControls.proactive')" color="primary"
-        :disabled="loading || savingProactive || !contact" :loading="savingProactive" hide-details inset
-        data-testid="quick-proactive-switch" @update:model-value="setProactive" />
       <div class="quick-controls__login">
         <v-chip :color="login?.online ? 'success' : 'warning'" size="small" variant="tonal">
           {{ loginLabel }}<span v-if="login?.account" class="ms-2">{{ login.account }}</span>
@@ -233,11 +233,14 @@ onUnmounted(() => { stopped = true; clearTimeout(polling); });
 
 <style scoped>
 .quick-controls { border-radius: 16px; }
-.quick-controls__grid { display: grid; grid-template-columns: minmax(240px, 1.3fr) minmax(150px, .7fr) minmax(200px, 1fr); align-items: center; gap: 24px; }
-.quick-controls__reply, .quick-controls__login { min-width: 0; }
+.quick-controls__session { max-width: 520px; margin-bottom: 12px; }
+.quick-controls__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
+.quick-controls__switches { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 32px; min-width: 0; }
+.quick-controls__switches :deep(.v-switch) { flex: 0 0 auto; }
 .quick-controls__login { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 12px; }
-@media (max-width: 960px) {
-  .quick-controls__grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+@media (max-width: 600px) {
+  .quick-controls__actions { flex-direction: column; align-items: stretch; }
+  .quick-controls__switches { column-gap: 16px; }
   .quick-controls__login { justify-content: flex-start; }
 }
 </style>
