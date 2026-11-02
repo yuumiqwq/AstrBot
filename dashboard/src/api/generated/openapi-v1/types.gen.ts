@@ -847,6 +847,20 @@ export type ValidationError = {
     };
 };
 
+export type GetNapcatStatusResponse = (SuccessEnvelope);
+
+export type GetNapcatStatusError = (ErrorEnvelope);
+
+export type RequestNapcatQrcodeData = {
+    body: {
+        refresh?: boolean;
+    };
+};
+
+export type RequestNapcatQrcodeResponse = (SuccessEnvelope);
+
+export type RequestNapcatQrcodeError = (ErrorEnvelope);
+
 export type EstimatePresetsApiV1PersonaExampleReviewsPresetsBudgetPostData = {
     body: PresetBudgetRequest;
 };

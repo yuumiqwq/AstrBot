@@ -1,4 +1,24 @@
 {
+  "quickControls": {
+    "title": "クイック操作",
+    "refresh": "状態を更新",
+    "session": "会話",
+    "reply": "モデルの返信",
+    "proactive": "自発メッセージ",
+    "qqLogin": "QQ ログイン",
+    "refreshQr": "QR コードを更新",
+    "close": "閉じる",
+    "reading": "読み込み中",
+    "unconfigured": "QQ ログインサービスが未設定です",
+    "online": "QQ 接続済み",
+    "offline": "QQ スキャン待ち",
+    "confirming": "ログイン確認待ち",
+    "reconnecting": "QQ 再接続中",
+    "connectionFailed": "QQ の状態を取得できませんでした",
+    "readFailed": "返信設定を取得できませんでした。更新してください。",
+    "saveFailed": "設定を保存できませんでした。更新してください。",
+    "qrFailed": "QR コードを取得できませんでした。再試行してください。"
+  },
   "greeting": {
     "morning": "おはようございます。AstrBot へようこそ",
     "afternoon": "こんにちは。AstrBot へようこそ",

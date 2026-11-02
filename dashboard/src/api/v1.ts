@@ -75,6 +75,24 @@ export interface ApiEnvelope<T> {
   data: T;
 }
 
+export interface NapCatLoginStatus {
+  configured: boolean;
+  online: boolean;
+  phase: string;
+  account?: string;
+  login_error?: string;
+  qrcode?: string;
+}
+
+export const napcatApi = {
+  status() {
+    return apiV1Client.get<ApiEnvelope<NapCatLoginStatus>>('/napcat/status');
+  },
+  qrcode(refresh = false) {
+    return apiV1Client.post<ApiEnvelope<NapCatLoginStatus>>('/napcat/qrcode', { refresh });
+  },
+};
+
 export const UPGRADE_RECOVERY_EVENT = 'astrbot-upgrade-recovery';
 export const UPGRADE_RECOVERY_TOKEN_KEY = 'astrbot-upgrade-recovery-token';
 

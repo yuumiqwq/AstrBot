@@ -97,6 +97,49 @@ tags:
   - name: Webhooks
 
 paths:
+  /api/v1/napcat/status:
+    get:
+      tags: [NapCat]
+      summary: Read QQ login status
+      operationId: getNapcatStatus
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+  /api/v1/napcat/qrcode:
+    post:
+      tags: [NapCat]
+      summary: Retrieve or refresh the logged-out QQ session's QR code
+      operationId: requestNapcatQrcode
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh:
+                  type: boolean
+                  default: false
+              additionalProperties: false
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
   /api/v1/persona-example-reviews/presets/budget:
     post:
       tags:

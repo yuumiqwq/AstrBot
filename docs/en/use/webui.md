@@ -1,5 +1,15 @@
 # WebUI
 
+## Home quick controls
+
+![Home quick controls](./images/bot-quick-controls-en.png)
+
+The home page's **Quick controls** card selects an existing private conversation and toggles its **Model replies** immediately. **Proactive messages** independently controls the companion plugin's automatic contacts. Both switches retain their saved state without deleting conversation history or changing the persona.
+
+When QQ disconnects, **QQ sign-in** displays its QR code, supports explicit refresh, and updates the status after phone confirmation. Reading status never logs out an active account. Configure the server's `NAPCAT_WEBUI_URL` and a read-only `NAPCAT_WEBUI_CONFIG` file to connect AstrBot to the deployment's NapCat; its credentials stay on the server and access requires a Dashboard login.
+
+The existing **Custom rules → Edit conversation → Conversation services** entry remains available. The home card adds quick access to the same conversation settings.
+
 The AstrBot admin panel features plugin management, log viewing, visual configuration, statistics viewing, and more.
 
 ## Navigation and Previous Entry Points

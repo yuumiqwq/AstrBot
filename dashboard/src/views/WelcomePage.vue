@@ -12,6 +12,10 @@
         </v-col>
       </v-row>
 
+      <v-row class="px-4 mb-3">
+        <v-col cols="12"><BotQuickControls /></v-col>
+      </v-row>
+
       <v-row class="px-4">
         <v-col cols="12">
           <v-card class="welcome-card pa-6" elevation="0">
@@ -196,6 +200,7 @@ import { computed, ref, watch, onMounted } from 'vue';
 import axios from 'axios';
 import AddNewPlatform from '@/components/platform/AddNewPlatform.vue';
 import ProviderConfigDialog from '@/components/chat/ProviderConfigDialog.vue';
+import BotQuickControls from '@/components/shared/BotQuickControls.vue';
 import { configProfileApi, providerApi, systemConfigApi } from '@/api/v1';
 import { useI18n, useModuleI18n } from '@/i18n/composables';
 import { useToast } from '@/utils/toast';

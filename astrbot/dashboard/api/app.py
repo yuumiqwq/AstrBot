@@ -32,6 +32,7 @@ from astrbot.dashboard.services.file_service import FileService
 from astrbot.dashboard.services.knowledge_base_service import KnowledgeBaseService
 from astrbot.dashboard.services.live_chat_service import LiveChatService
 from astrbot.dashboard.services.log_service import LogService
+from astrbot.dashboard.services.napcat_service import NapCatService
 from astrbot.dashboard.services.open_api_service import OpenApiService
 from astrbot.dashboard.services.persona_example_service import PersonaExampleService
 from astrbot.dashboard.services.persona_service import PersonaService
@@ -135,6 +136,7 @@ def create_dashboard_asgi_app(
         ),
         bots=BotConfigService(core_lifecycle),
         platforms=PlatformService(core_lifecycle),
+        napcat=NapCatService(),
         providers=ProviderConfigService(core_lifecycle),
         personas=PersonaService(core_lifecycle),
         persona_examples=PersonaExampleService(core_lifecycle, db),

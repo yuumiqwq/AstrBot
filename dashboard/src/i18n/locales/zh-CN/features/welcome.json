@@ -1,4 +1,24 @@
 {
+  "quickControls": {
+    "title": "快捷控制",
+    "refresh": "刷新状态",
+    "session": "会话",
+    "reply": "模型回复",
+    "proactive": "主动消息",
+    "qqLogin": "QQ 扫码登录",
+    "refreshQr": "刷新二维码",
+    "close": "关闭",
+    "reading": "读取中",
+    "unconfigured": "QQ 登录服务未配置",
+    "online": "QQ 已登录",
+    "offline": "QQ 等待扫码",
+    "confirming": "等待登录确认",
+    "reconnecting": "QQ 正在重连",
+    "connectionFailed": "QQ 状态读取失败",
+    "readFailed": "回复状态读取失败，请刷新重试",
+    "saveFailed": "开关保存失败，请刷新重试",
+    "qrFailed": "二维码读取失败，请重试"
+  },
   "greeting": {
     "morning": "上午好，欢迎使用 AstrBot",
     "afternoon": "下午好，欢迎使用 AstrBot",
