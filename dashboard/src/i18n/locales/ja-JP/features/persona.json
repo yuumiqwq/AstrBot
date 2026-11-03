@@ -171,6 +171,8 @@
     "rangeStart": "開始",
     "rangeEnd": "終了",
     "selectRange": "範囲を選択",
+    "selectToHere": "ここまで選択",
+    "backToTop": "先頭に戻る",
     "selectPage": "このページを選択",
     "clearSelection": "選択解除",
     "selectedMessages": "件選択",

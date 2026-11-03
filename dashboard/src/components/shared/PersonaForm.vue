@@ -10,9 +10,25 @@
       :class="{ 'persona-form-card-mobile': $vuetify.display.smAndDown }"
     >
       <v-card-title class="persona-form-title text-h3 pa-4 pb-0 pl-6">
-        {{
-          editingPersona ? tm("dialog.edit.title") : tm("dialog.create.title")
-        }}
+        <div class="persona-form-heading">
+          <span>{{
+            editingPersona ? tm("dialog.edit.title") : tm("dialog.create.title")
+          }}</span>
+          <v-btn
+            variant="tonal"
+            color="primary"
+            prepend-icon="mdi-chat-outline"
+            append-icon="mdi-chevron-right"
+            :disabled="saving || !formValid"
+            @click="openPresets"
+          >
+            {{
+              editingPersona && !formDirty
+                ? tm("form.presetDialogs")
+                : tm("review.saveAndOpen")
+            }}
+          </v-btn>
+        </div>
       </v-card-title>
 
       <v-card-text class="persona-form-content">
@@ -75,20 +91,6 @@
                   :loading-skills="loadingSkills"
                 />
               </section>
-
-              <v-btn
-                variant="outlined"
-                prepend-icon="mdi-chat-outline"
-                append-icon="mdi-chevron-right"
-                :disabled="saving || !formValid"
-                @click="openPresets"
-              >
-                {{
-                  editingPersona && !formDirty
-                    ? tm("form.presetDialogs")
-                    : tm("review.saveAndOpen")
-                }}
-              </v-btn>
             </v-col>
           </v-row>
         </v-form>
@@ -372,6 +374,14 @@ watch(
 .persona-form-card {
   overflow: hidden;
   border-radius: 12px;
+}
+
+.persona-form-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .persona-form-content {

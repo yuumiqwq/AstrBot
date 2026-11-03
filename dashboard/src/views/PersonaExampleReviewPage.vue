@@ -1,5 +1,5 @@
 <template>
-  <div class="review-page">
+  <div ref="pageRoot" class="review-page">
     <div class="d-flex align-center justify-space-between mb-5 ga-3 flex-wrap">
       <div class="d-flex align-center ga-3">
         <v-btn
@@ -134,15 +134,29 @@
               :key="`${segment.id}:${pair}`"
               class="preset-pair mb-4"
             >
-              <v-checkbox
-                v-model="selectedPairs"
-                :value="pair"
-                :label="`${label('round')} ${pair - segment.start_pair + 1}`"
-                :aria-label="label('selectRound')"
-                hide-details
-                density="compact"
-                :disabled="busy"
-              />
+              <div class="selection-row">
+                <v-checkbox
+                  :model-value="selectedPairs"
+                  :value="pair"
+                  :label="`${label('round')} ${pair - segment.start_pair + 1}`"
+                  :aria-label="label('selectRound')"
+                  hide-details
+                  density="compact"
+                  class="selection-checkbox"
+                  :disabled="busy"
+                  @update:model-value="updateSelection($event, pair, 'presets')"
+                />
+                <v-btn
+                  v-if="
+                    pairSelectionAnchor !== null && pairSelectionAnchor !== pair
+                  "
+                  variant="text"
+                  size="small"
+                  :disabled="busy"
+                  @click="selectToHere(pair, 'presets')"
+                  >{{ label("selectToHere") }}</v-btn
+                >
+              </div>
               <v-textarea
                 v-model="presetDialogs[pair * 2]"
                 :label="label('user')"
@@ -228,7 +242,7 @@
         <v-btn
           variant="text"
           :disabled="busy || !selectedHistory.length"
-          @click="selectedHistory = []"
+          @click="clearHistorySelection"
           >{{ label("clearSelection") }}</v-btn
         >
         <span
@@ -250,14 +264,31 @@
         class="pa-4 mb-3 history-message"
         :class="{ 'history-message-assistant': message.role === 'assistant' }"
       >
-        <v-checkbox
-          v-model="selectedHistory"
-          :value="message.index"
-          :label="`${message.index + 1} · ${label(message.role)}`"
-          hide-details
-          density="compact"
-          :disabled="busy"
-        />
+        <div class="selection-row">
+          <v-checkbox
+            :model-value="selectedHistory"
+            :value="message.index"
+            :label="`${message.index + 1} · ${label(message.role)}`"
+            hide-details
+            density="compact"
+            class="selection-checkbox"
+            :disabled="busy"
+            @update:model-value="
+              updateSelection($event, message.index, 'history')
+            "
+          />
+          <v-btn
+            v-if="
+              historySelectionAnchor !== null &&
+              historySelectionAnchor !== message.index
+            "
+            variant="text"
+            size="small"
+            :disabled="busy"
+            @click="selectToHere(message.index, 'history')"
+            >{{ label("selectToHere") }}</v-btn
+          >
+        </div>
         <div class="message-content">{{ message.content }}</div>
       </v-card>
       <v-pagination
@@ -449,6 +480,16 @@
         :disabled="busy"
       />
     </template>
+    <v-btn
+      v-if="showBackToTop"
+      class="back-to-top"
+      variant="tonal"
+      color="primary"
+      prepend-icon="mdi-arrow-up"
+      elevation="4"
+      @click="scrollToTop"
+      >{{ label("backToTop") }}</v-btn
+    >
     <v-snackbar
       v-model="noticeOpen"
       :color="noticeError ? 'error' : 'success'"
@@ -538,6 +579,9 @@ const noticeOpen = ref(false);
 const noticeError = ref(false);
 const pageSize = 20;
 let viewRequest = 0;
+const pageRoot = ref<HTMLElement>();
+const scrollContainer = ref<HTMLElement>();
+const showBackToTop = ref(false);
 
 const presetDialogs = ref<string[]>([]);
 const segments = ref<Segment[]>([]);
@@ -547,6 +591,7 @@ const loadedPersona = ref("");
 const expandedSegment = ref<string>();
 const pairPage = ref(1);
 const selectedPairs = ref<number[]>([]);
+const pairSelectionAnchor = ref<number | null>(null);
 const presetBudget = ref<Budget | null>(null);
 const budgetLoading = ref(false);
 const savingPresets = ref(false);
@@ -578,6 +623,7 @@ const presetOverBudget = computed(() =>
 const historyMessages = ref<HistoryMessage[]>([]);
 const historyRevision = ref("");
 const selectedHistory = ref<number[]>([]);
+const historySelectionAnchor = ref<number | null>(null);
 const historyPageNumber = ref(1);
 const historyPageSize = 40;
 const rangeStart = ref<number | null>(null);
@@ -638,6 +684,53 @@ function visiblePairs(segment: Segment) {
       segment.start_pair + (pairPage.value - 1) * pageSize + offset,
   );
 }
+function updateSelection(
+  values: number[] | null,
+  index: number,
+  scope: "presets" | "history",
+) {
+  const selected = scope === "presets" ? selectedPairs : selectedHistory;
+  const anchor =
+    scope === "presets" ? pairSelectionAnchor : historySelectionAnchor;
+  const next = values ?? [];
+  selected.value = next;
+  if (next.includes(index)) anchor.value = index;
+  else if (anchor.value === index) anchor.value = next[next.length - 1] ?? null;
+}
+function selectToHere(index: number, scope: "presets" | "history") {
+  const selected = scope === "presets" ? selectedPairs : selectedHistory;
+  const anchor =
+    scope === "presets" ? pairSelectionAnchor : historySelectionAnchor;
+  if (anchor.value === null || !selected.value.includes(anchor.value)) return;
+  const start = Math.min(anchor.value, index);
+  const end = Math.max(anchor.value, index);
+  const indexes =
+    scope === "presets"
+      ? Array.from({ length: end - start + 1 }, (_, offset) => start + offset)
+      : historyMessages.value
+          .filter((message) => message.index >= start && message.index <= end)
+          .map((message) => message.index);
+  selected.value = [...new Set([...selected.value, ...indexes])];
+  if (scope === "history") {
+    rangeStart.value = anchor.value;
+    rangeEnd.value = index;
+  }
+}
+function clearHistorySelection() {
+  selectedHistory.value = [];
+  historySelectionAnchor.value = null;
+}
+function updateScrollPosition() {
+  showBackToTop.value = (scrollContainer.value?.scrollTop ?? 0) > 320;
+}
+function scrollToTop() {
+  scrollContainer.value?.scrollTo({
+    top: 0,
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth",
+  });
+}
 function visibleReviewPairs(review: Review) {
   return Array.from(
     { length: review.begin_dialogs.length / 2 },
@@ -660,6 +753,7 @@ function acceptPresets(data: {
   presetRevision.value = data.revision;
   presetBudget.value = data.budget;
   selectedPairs.value = [];
+  pairSelectionAnchor.value = null;
   presetSnapshot.value = presetContent.value;
   loadedPersona.value = personaId.value;
   if (!segments.value.some((segment) => segment.id === expandedSegment.value))
@@ -695,6 +789,7 @@ function removePairs(pairs: number[]) {
   presetDialogs.value = updated.begin_dialogs;
   segments.value = updated.segments;
   selectedPairs.value = [];
+  pairSelectionAnchor.value = null;
   const segment = segments.value.find(
     (item) => item.id === expandedSegment.value,
   );
@@ -748,7 +843,7 @@ async function refreshBudget() {
 }
 async function loadHistory() {
   const request = ++historyRequest;
-  selectedHistory.value = [];
+  clearHistorySelection();
   historyMessages.value = [];
   historyRevision.value = "";
   historyPageNumber.value = 1;
@@ -770,6 +865,7 @@ async function loadHistory() {
 }
 function selectRange() {
   if (rangeStart.value === null || rangeEnd.value === null) return;
+  historySelectionAnchor.value = rangeStart.value;
   const start = Math.min(rangeStart.value, rangeEnd.value);
   const end = Math.max(rangeStart.value, rangeEnd.value);
   selectedHistory.value = [
@@ -788,6 +884,7 @@ function selectHistoryPage() {
       ...historyPage.value.map((message) => message.index),
     ]),
   ];
+  historySelectionAnchor.value ??= historyPage.value[0]?.index ?? null;
 }
 async function importSelectedHistory() {
   const messages = new Map(
@@ -809,7 +906,7 @@ async function importSelectedHistory() {
       revision: historyRevision.value,
       ranges: historyRanges.value,
     });
-    selectedHistory.value = [];
+    clearHistorySelection();
     reviewPage.value = 1;
     state.value = "pending";
     showNotice();
@@ -915,6 +1012,7 @@ watch(presetContent, () => {
 watch(expandedSegment, () => {
   pairPage.value = 1;
   selectedPairs.value = [];
+  pairSelectionAnchor.value = null;
 });
 watch(expandedReview, () => {
   reviewPairPage.value = 1;
@@ -963,12 +1061,19 @@ onBeforeRouteUpdate(
     (!busy.value && (await confirmDiscard())),
 );
 onBeforeUnmount(() => {
+  scrollContainer.value?.removeEventListener("scroll", updateScrollPosition);
   clearTimeout(budgetTimer);
   budgetRequest++;
   viewRequest++;
   historyRequest++;
 });
 onMounted(async () => {
+  scrollContainer.value =
+    pageRoot.value?.closest<HTMLElement>(".page-content") ?? undefined;
+  scrollContainer.value?.addEventListener("scroll", updateScrollPosition, {
+    passive: true,
+  });
+  updateScrollPosition();
   loading.value = true;
   try {
     const [personaResponse, sourceResponse] = await Promise.all([
@@ -1042,6 +1147,24 @@ onMounted(async () => {
 .preset-pair {
   padding-bottom: 16px;
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.selection-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.selection-checkbox {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.selection-row > .v-btn {
+  flex: 0 0 auto;
+}
+.back-to-top {
+  position: fixed;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 5;
 }
 .message-content {
   white-space: pre-wrap;

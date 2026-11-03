@@ -171,6 +171,8 @@
     "rangeStart": "起点",
     "rangeEnd": "终点",
     "selectRange": "选择区间",
+    "selectToHere": "选择到这里",
+    "backToTop": "回到顶部",
     "selectPage": "选择本页",
     "clearSelection": "清除选择",
     "selectedMessages": "条已选消息",

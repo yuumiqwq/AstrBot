@@ -58,6 +58,12 @@ You can edit both sides of each candidate. **Save** updates the pending candidat
 
 The **Preset dialogues** tab shows all examples currently used by the persona, including direct imports and approved candidates. Edit either side, delete one exchange, or select several exchanges and use **Delete selected**, then select **Save**. Pagination preserves unsaved edits. Saving checks the content revision so concurrent edits or approvals are not overwritten. The approved tab retains review records; **Preset dialogues** represents the examples currently in use.
 
+The **Preset dialogues** entry has moved from below the capabilities area to the persona editor's header. In **History**, check a starting message, scroll or change pages, and select **Select to here** beside the ending message to select the inclusive range while preserving other selections. Existing presets support the same action for exchanges within one excerpt. After scrolling, **Back to top** appears in the lower-right corner of the management page.
+
+![Preset entry in the persona editor header](../images/persona-preset-entry.png)
+
+![Select a continuous history range](../images/persona-select-to-here.png)
+
 ![Preset dialogue management](../images/persona-preset-management.png)
 
 The page displays estimated token usage against the current default chat model's context capacity, with a 15% preset limit. Capacity follows the provider configuration, model metadata, or the configured context-compression fallback. Approval, preset editing, and the original persona create/update APIs enforce the combined allowance before writing. Oversized candidates remain pending, and the saved persona remains unchanged.

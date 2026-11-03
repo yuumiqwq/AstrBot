@@ -171,6 +171,8 @@
     "rangeStart": "Начало",
     "rangeEnd": "Конец",
     "selectRange": "Выбрать диапазон",
+    "selectToHere": "Выбрать до сюда",
+    "backToTop": "Наверх",
     "selectPage": "Выбрать страницу",
     "clearSelection": "Снять выбор",
     "selectedMessages": "выбранных сообщений",

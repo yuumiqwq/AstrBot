@@ -171,6 +171,8 @@
     "rangeStart": "Start",
     "rangeEnd": "End",
     "selectRange": "Select range",
+    "selectToHere": "Select to here",
+    "backToTop": "Back to top",
     "selectPage": "Select page",
     "clearSelection": "Clear selection",
     "selectedMessages": "selected messages",
