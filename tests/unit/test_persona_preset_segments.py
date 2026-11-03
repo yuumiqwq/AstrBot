@@ -331,3 +331,312 @@ async def test_persona_copy_and_prompt_edit_preserve_excerpt_metadata(service):
     assert (
         await service.db.get_persona_by_id("example")
     ).begin_dialog_segments == exported["begin_dialog_segments"]
+
+
+async def replace_source(service, messages):
+    """Replace a synthetic source without touching a live conversation.
+
+    Args:
+        service: Persona example service using a temporary test database.
+        messages: Complete synthetic native history to persist.
+    """
+    async with service.db.get_db() as session:
+        row = (
+            await session.execute(
+                select(ConversationV2).where(ConversationV2.conversation_id == "source")
+            )
+        ).scalar_one()
+        row.content = messages
+        session.add(row)
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_direct_append_needs_no_review_and_is_idempotent(service):
+    source = await service.history("source", "example")
+    arguments = {
+        "persona_id": "example",
+        "conversation_id": "source",
+        "revision": source["revision"],
+        "append": True,
+        "ranges": [{"start": 1, "end": 4}, {"start": 7, "end": 8}],
+    }
+    assert await service.import_conversation(**arguments) == {
+        "added": 3,
+        "skipped": 0,
+        "written": True,
+    }
+    assert (await service.list("example", "pending", 1))["total"] == 0
+    presets = await service.presets("example")
+    assert len(presets["segments"]) == 3
+    assert presets["begin_dialogs"][2:6] == [
+        "",
+        "opening\n\nsecond bubble",
+        "first question",
+        "first answer",
+    ]
+    assert presets["segments"][1]["source_conversation_id"] == "source"
+    assert len(presets["segments"][1]["source_messages"]) == 2
+    assert await service.import_conversation(**arguments) == {
+        "added": 0,
+        "skipped": 3,
+        "written": True,
+    }
+    assert (await service.presets("example"))["revision"] == presets["revision"]
+    tagged = await service.history("source", "example")
+    assert {item["index"] for item in tagged["messages"] if item["in_presets"]} == {
+        1,
+        2,
+        3,
+        4,
+        7,
+        8,
+    }
+
+
+@pytest.mark.asyncio
+async def test_direct_append_budget_failure_leaves_no_partial_write(service):
+    await replace_source(
+        service,
+        [
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "a" * 65000},
+        ],
+    )
+    source = await service.history("source")
+    before = await service.presets("example")
+    with pytest.raises(ValueError, match="15%"):
+        await service.import_conversation(
+            "example",
+            "source",
+            revision=source["revision"],
+            ranges=[{"start": 0, "end": 1}],
+            append=True,
+        )
+    assert (await service.presets("example"))["revision"] == before["revision"]
+    assert (await service.list("example", "pending", 1))["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_direct_source_tags_follow_partial_deletion_and_stable_qq_ids(service):
+    raw = [
+        {
+            "role": "user" if i % 2 == 0 else "assistant",
+            "content": text,
+            "_qq_sequence": 100 + i,
+            "_qq_time": 1793664000 + i,
+        }
+        for i, text in enumerate(["q1", "a1", "q2", "a2", "q3", "a3"])
+    ]
+    await replace_source(service, raw)
+    source = await service.history("source")
+    await service.import_conversation(
+        "example",
+        "source",
+        revision=source["revision"],
+        ranges=[{"start": 0, "end": 5}],
+        append=True,
+    )
+    presets = await service.presets("example")
+    assert presets["segments"][1]["source_messages"] == [
+        ["qq:100", "qq:101"],
+        ["qq:102", "qq:103"],
+        ["qq:104", "qq:105"],
+    ]
+    segment = dict(
+        presets["segments"][1],
+        pair_count=2,
+        source_messages=[
+            presets["segments"][1]["source_messages"][0],
+            presets["segments"][1]["source_messages"][2],
+        ],
+    )
+    await service.update_presets(
+        "example",
+        presets["revision"],
+        presets["begin_dialogs"][:4] + presets["begin_dialogs"][6:],
+        [presets["segments"][0], segment],
+    )
+    await replace_source(
+        service, [{"role": "system", "content": "shift indexes"}, *raw]
+    )
+    tagged = await service.history("source", "example")
+    assert {m["source_id"] for m in tagged["messages"] if m["in_presets"]} == {
+        "qq:100",
+        "qq:101",
+        "qq:104",
+        "qq:105",
+    }
+    assert tagged["messages"][0]["index"] == 1
+    current = await service.presets("example")
+    await service.update_presets("example", current["revision"], [], [])
+    assert not any(
+        m["in_presets"]
+        for m in (await service.history("source", "example"))["messages"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_legacy_tags_allow_excerpt_edges_inside_consecutive_bubbles(service):
+    messages = [
+        {"role": "user", "content": "before"},
+        {"role": "user", "content": "target question"},
+        {"role": "assistant", "content": "target answer"},
+        {"role": "assistant", "content": "after"},
+    ]
+    await replace_source(service, messages)
+    preset = await service.presets("example")
+    await service.update_presets(
+        "example", preset["revision"], ["target question", "target answer"]
+    )
+    marked = await service.history("source", "example")
+    assert [m["in_presets"] for m in marked["messages"]] == [False, True, True, False]
+    await replace_source(service, [*messages, *messages[1:3]])
+    ambiguous = await service.history("source", "example")
+    assert not any(m["in_presets"] for m in ambiguous["messages"])
+
+
+@pytest.mark.asyncio
+async def test_history_uses_only_real_saved_send_times(service):
+    times = [1793664000, None, "1793664001", True, 0, -1]
+    await replace_source(
+        service,
+        [
+            {"role": "assistant", "content": str(index), "_qq_time": value}
+            for index, value in enumerate(times)
+        ],
+    )
+    history = await service.history("source")
+    assert [message["sent_at"] for message in history["messages"]] == [
+        1793664000,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_direct_import_api_accepts_provenance_and_persona_history_query(service):
+    app = FastAPI()
+    app.state.services = SimpleNamespace(persona_examples=service)
+    app.dependency_overrides[require_dashboard_user] = lambda: "admin"
+    app.include_router(router, prefix="/api/v1")
+    endpoint = "/api/v1/persona-example-reviews"
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        snapshot = (
+            await client.get(
+                endpoint + "/history",
+                params={"conversation_id": "source", "persona_id": "example"},
+            )
+        ).json()["data"]
+        written = await client.post(
+            endpoint + "/import",
+            json={
+                "persona_id": "example",
+                "conversation_id": "source",
+                "append": True,
+                "revision": snapshot["revision"],
+                "ranges": [{"start": 3, "end": 4}],
+            },
+        )
+        assert written.status_code == 200 and written.json()["data"]["written"] is True
+        presets = (
+            await client.get(endpoint + "/presets", params={"persona_id": "example"})
+        ).json()["data"]
+        saved = await client.put(
+            endpoint + "/presets",
+            json={
+                "persona_id": "example",
+                **{
+                    key: presets[key]
+                    for key in ("revision", "begin_dialogs", "segments")
+                },
+            },
+        )
+        assert saved.status_code == 200
+        after = (
+            await client.get(
+                endpoint + "/history",
+                params={"conversation_id": "source", "persona_id": "example"},
+            )
+        ).json()["data"]
+        assert {m["index"] for m in after["messages"] if m["in_presets"]} == {3, 4}
+
+
+@pytest.mark.asyncio
+async def test_equal_text_at_distinct_qq_positions_remains_distinct_provenance(service):
+    raw = [
+        {
+            "role": "user" if index % 2 == 0 else "assistant",
+            "content": text,
+            "_qq_sequence": 200 + index,
+        }
+        for index, text in enumerate(
+            ["same question", "same answer", "same question", "same answer"]
+        )
+    ]
+    await replace_source(service, raw)
+    source = await service.history("source")
+    first = await service.import_conversation(
+        "example",
+        "source",
+        revision=source["revision"],
+        ranges=[{"start": 0, "end": 1}],
+        append=True,
+    )
+    assert first["added"] == 1
+    assert [
+        m["in_presets"]
+        for m in (await service.history("source", "example"))["messages"]
+    ] == [True, True, False, False]
+    second = await service.import_conversation(
+        "example",
+        "source",
+        revision=source["revision"],
+        ranges=[{"start": 2, "end": 3}],
+        append=True,
+    )
+    assert second["added"] == 1 and second["skipped"] == 0
+    assert all(
+        m["in_presets"]
+        for m in (await service.history("source", "example"))["messages"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_partial_overlap_does_not_commit_earlier_staged_pairs(service):
+    raw = [
+        {"role": role, "content": value, "_qq_sequence": 300 + index}
+        for index, (role, value) in enumerate(
+            [
+                ("user", "new question"),
+                ("assistant", "new answer"),
+                ("user", "old question"),
+                ("assistant", "old answer"),
+                ("assistant", "extra bubble"),
+            ]
+        )
+    ]
+    await replace_source(service, raw)
+    source = await service.history("source")
+    await service.import_conversation(
+        "example",
+        "source",
+        revision=source["revision"],
+        ranges=[{"start": 2, "end": 3}],
+        append=True,
+    )
+    before = await service.presets("example")
+    with pytest.raises(ValueError, match="部分重叠"):
+        await service.import_conversation(
+            "example",
+            "source",
+            revision=source["revision"],
+            ranges=[{"start": 0, "end": 4}],
+            append=True,
+        )
+    assert (await service.presets("example"))["revision"] == before["revision"]

@@ -180,10 +180,10 @@
     "removed": "已移除",
     "unsaved": "预设对话有未保存的修改，是否离开？",
     "incompleteRange": "每个选中片段须以助手回复结束，请调整选择范围。",
-    "savePresetsFirst": "请先保存预设对话的修改，再审核写入。",
+    "savePresetsFirst": "请先保存预设对话的修改，再加入历史消息。",
     "personaMissing": "人格不存在。",
     "saveAndOpen": "保存并打开预设",
-    "title": "审核写入",
+    "title": "预设对话",
     "create": "新建候选",
     "persona": "目标人格",
     "conversation": "来源会话",
@@ -207,6 +207,14 @@
     "selectRound": "选择此轮",
     "capacity": "上下文占用",
     "remaining": "预设剩余额度",
-    "overBudget": "预设对话超出 15% 上限，请减少内容后保存。"
+    "overBudget": "预设对话超出 15% 上限，请减少内容后保存。",
+    "dateStart": "开始日期",
+    "dateEnd": "结束日期",
+    "clearDateFilter": "清除日期筛选",
+    "invalidDateRange": "结束日期不能早于开始日期",
+    "unknownTime": "时间未知",
+    "noHistoryMatches": "没有符合日期的历史消息",
+    "addPresets": "加入预设对话",
+    "inPresets": "已加入预设"
   }
 }

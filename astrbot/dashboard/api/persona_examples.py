@@ -48,6 +48,7 @@ class ExampleImport(BaseModel):
     context_rounds: int = Field(default=2, ge=0, le=10)
     revision: str | None = None
     ranges: list[HistoryRange] | None = None
+    append: bool = False
 
 
 class PresetSegment(BaseModel):
@@ -57,6 +58,8 @@ class PresetSegment(BaseModel):
     pair_count: int = Field(ge=1)
     source_review_id: str | None = None
     source_title: str = ""
+    source_conversation_id: str | None = None
+    source_messages: list[list[str]] | None = None
 
 
 class PresetBudgetRequest(BaseModel):
@@ -96,11 +99,12 @@ async def list_sources(
 @router.get("/history")
 async def get_source_history(
     conversation_id: str = Query(min_length=1),
+    persona_id: str = "",
     _username: str = Depends(require_dashboard_user),
     service: PersonaExampleService = Depends(get_service),
 ):
     try:
-        return ok(await service.history(conversation_id))
+        return ok(await service.history(conversation_id, persona_id))
     except ValueError as exc:
         raise ApiError(str(exc)) from exc
 

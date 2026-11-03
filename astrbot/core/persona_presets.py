@@ -70,6 +70,25 @@ def normalize_preset_segments(
                 "source_title": title,
             }
         )
+        source = segment.get("source_conversation_id")
+        origins = segment.get("source_messages")
+        if source is not None or origins is not None:
+            if (
+                not isinstance(source, str)
+                or not source
+                or not isinstance(origins, list)
+                or len(origins) != count
+                or any(
+                    not isinstance(pair, list)
+                    or any(not isinstance(item, str) or not item for item in pair)
+                    for pair in origins
+                )
+            ):
+                raise ValueError("预设对话来源消息格式有误")
+            result[-1].update(
+                source_conversation_id=source,
+                source_messages=[list(pair) for pair in origins],
+            )
         seen.add(identifier)
         offset += count
     if offset != pair_count:
@@ -167,5 +186,7 @@ def preserve_preset_segments(
         raise ValueError("修改多段预设的条数时，请同时提交片段范围")
     if segments:
         segments[0]["pair_count"] = len(dialogs) // 2
+        segments[0].pop("source_conversation_id", None)
+        segments[0].pop("source_messages", None)
         return normalize_preset_segments(dialogs, segments)
     return normalize_preset_segments(dialogs)

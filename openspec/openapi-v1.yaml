@@ -181,6 +181,13 @@ paths:
           type: string
           minLength: 1
           title: Conversation Id
+      - name: persona_id
+        in: query
+        required: false
+        schema:
+          type: string
+          default: ''
+          title: Persona Id
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -6104,6 +6111,20 @@ components:
           type: string
           title: Source Title
           default: ''
+        source_conversation_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Conversation Id
+        source_messages:
+          anyOf:
+          - type: array
+            items:
+              type: array
+              items:
+                type: string
+          - type: 'null'
+          title: Source Messages
       additionalProperties: false
       type: object
       required:
@@ -6213,6 +6234,10 @@ components:
             type: array
           - type: 'null'
           title: Ranges
+        append:
+          type: boolean
+          default: false
+          title: Append
       additionalProperties: false
       type: object
       required:

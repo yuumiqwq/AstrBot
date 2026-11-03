@@ -180,10 +180,10 @@
     "removed": "削除済み",
     "unsaved": "未保存の変更があります。このページを離れますか？",
     "incompleteRange": "選択した各抜粋はアシスタントの返答で終わる必要があります。",
-    "savePresetsFirst": "審査を承認する前にプリセットの変更を保存してください。",
+    "savePresetsFirst": "履歴を追加する前にプリセットの変更を保存してください。",
     "personaMissing": "人格が見つかりません。",
     "saveAndOpen": "保存してプリセットを開く",
-    "title": "Review examples",
+    "title": "プリセット会話",
     "create": "New candidate",
     "persona": "Target persona",
     "conversation": "Source conversation",
@@ -200,6 +200,14 @@
     "approve": "Approve and append",
     "cancel": "Cancel",
     "saved": "Saved",
-    "import": "Read conversation"
+    "import": "Read conversation",
+    "dateStart": "開始日",
+    "dateEnd": "終了日",
+    "clearDateFilter": "日付の絞り込みを解除",
+    "invalidDateRange": "終了日は開始日以降にしてください",
+    "unknownTime": "時刻不明",
+    "noHistoryMatches": "この日付に一致する履歴はありません",
+    "addPresets": "プリセットに追加",
+    "inPresets": "追加済み"
   }
 }

@@ -16,6 +16,72 @@ from astrbot.core.persona_presets import (
 from astrbot.dashboard.services.persona_preset_budget import preset_budget
 
 
+def _preset_source_ids(conversation_id, messages, dialogs, segments):
+    """Match current preset coverage to stable message identities.
+
+    Args:
+        conversation_id: Conversation whose source messages are displayed.
+        messages: Selectable messages retaining their original order and identities.
+        dialogs: Alternating user and assistant text currently stored in the persona.
+        segments: Normalized excerpt metadata covering those dialogues.
+
+    Returns:
+        Source identities covered by current excerpts, using exact unique text
+        matches only for older excerpts that have no stored source identities.
+    """
+    included = set()
+    for segment in segments:
+        source = segment.get("source_conversation_id")
+        if source == conversation_id:
+            included.update(
+                value for pair in segment["source_messages"] for value in pair
+            )
+            continue
+        if source:
+            continue
+        start = segment["start_pair"] * 2
+        excerpt = dialogs[start : start + segment["pair_count"] * 2]
+        searches = [excerpt]
+        while searches:
+            targets = searches.pop(0)
+            matches = []
+            for first in range(len(messages)):
+                position, identifiers = first, []
+                for offset, target in enumerate(targets):
+                    if not target:
+                        continue
+                    role = "assistant" if offset % 2 else "user"
+                    combined = ""
+                    while (
+                        position < len(messages) and messages[position]["role"] == role
+                    ):
+                        message = messages[position]
+                        value = (
+                            combined + ("\n\n" if combined else "") + message["content"]
+                        )
+                        if not target.startswith(value):
+                            break
+                        combined = value
+                        identifiers.append(message["source_id"])
+                        position += 1
+                        if combined == target:
+                            break
+                    if combined != target:
+                        break
+                else:
+                    matches.append(identifiers)
+                if len(matches) > 1:
+                    break
+            if len(matches) == 1:
+                included.update(matches[0])
+            elif targets is excerpt and len(excerpt) > 2:
+                # A partial deletion can leave gaps in an older excerpt.
+                searches.extend(
+                    excerpt[index : index + 2] for index in range(0, len(excerpt), 2)
+                )
+    return included
+
+
 class PersonaExampleService:
     def __init__(self, core_lifecycle, db):
         self.core_lifecycle = core_lifecycle
@@ -208,7 +274,28 @@ class PersonaExampleService:
                     and isinstance(part.get("text"), str)
                 )
             if isinstance(content, str) and content.strip():
-                messages.append({"index": index, "role": role, "content": content})
+                sequence = message.get("_qq_sequence")
+                sent_at = message.get("_qq_time")
+                identity = (
+                    f"qq:{sequence}"
+                    if type(sequence) is int and sequence > 0
+                    else f"index:{index}:"
+                    + hashlib.sha256(
+                        json.dumps(message, ensure_ascii=False, sort_keys=True).encode()
+                    ).hexdigest()
+                )
+                messages.append(
+                    {
+                        "index": index,
+                        "role": role,
+                        "content": content,
+                        "source_id": identity,
+                        "sent_at": sent_at
+                        if type(sent_at) is int and sent_at > 0
+                        else None,
+                        "in_presets": False,
+                    }
+                )
         return {
             "conversation_id": conversation.conversation_id,
             "title": conversation.title or conversation.user_id,
@@ -220,7 +307,7 @@ class PersonaExampleService:
             "messages": messages,
         }
 
-    async def history(self, conversation_id: str) -> dict:
+    async def history(self, conversation_id: str, persona_id: str = "") -> dict:
         async with self.db.get_db() as session:
             conversation = (
                 await session.execute(
@@ -231,7 +318,26 @@ class PersonaExampleService:
             ).scalar_one_or_none()
             if conversation is None:
                 raise ValueError("会话不存在")
-            return self._source_snapshot(conversation)
+            snapshot = self._source_snapshot(conversation)
+            if not persona_id:
+                return snapshot
+            persona = (
+                await session.execute(
+                    select(Persona).where(Persona.persona_id == persona_id)
+                )
+            ).scalar_one_or_none()
+            if persona is None:
+                raise ValueError("人格不存在")
+            dialogs = list(persona.begin_dialogs or [])
+            included = _preset_source_ids(
+                conversation_id,
+                snapshot["messages"],
+                dialogs,
+                normalize_preset_segments(dialogs, persona.begin_dialog_segments),
+            )
+            for message in snapshot["messages"]:
+                message["in_presets"] = message["source_id"] in included
+            return snapshot
 
     async def create(self, persona_id: str, begin_dialogs: list[str]) -> dict:
         async with self.db.get_db() as session:
@@ -258,6 +364,7 @@ class PersonaExampleService:
         context_rounds: int = 2,
         revision: str | None = None,
         ranges: list[dict] | None = None,
+        append: bool = False,
     ) -> dict:
         """Snapshot complete text exchanges without invoking a language model.
 
@@ -267,6 +374,7 @@ class PersonaExampleService:
             context_rounds: Number of preceding exchanges included in each candidate.
             revision: Observed source revision, required for selected ranges.
             ranges: Inclusive original message indices; each range is one candidate.
+            append: Write selected excerpts directly into the persona.
 
         Returns:
             Counts of newly captured and previously captured candidates.
@@ -275,12 +383,16 @@ class PersonaExampleService:
             ValueError: The selected persona or conversation no longer exists.
         """
         async with self.db.get_db() as session:
+            if append and ranges is None:
+                raise ValueError("请选择要加入预设的历史片段")
             # Serialize import and approval writes, including concurrent HTTP requests.
             if session.bind.dialect.name == "sqlite":
                 await session.execute(text("BEGIN IMMEDIATE"))
             persona = (
                 await session.execute(
-                    select(Persona).where(Persona.persona_id == persona_id)
+                    select(Persona)
+                    .where(Persona.persona_id == persona_id)
+                    .with_for_update()
                 )
             ).scalar_one_or_none()
             conversation = (
@@ -324,27 +436,87 @@ class PersonaExampleService:
             else:
                 selections = [messages]
             candidates = []
+            candidate_origins = []
             for selection in selections:
                 turns: list[tuple[str, str]] = []
+                origins = []
                 if selection and selection[0]["role"] == "assistant":
                     turns.append(("user", ""))
+                    origins.append([])
                 for message in selection:
                     role, content = message["role"], message["content"]
                     if turns and turns[-1][0] == role:
                         turns[-1] = (role, turns[-1][1] + "\n\n" + content)
+                        origins[-1].append(message["source_id"])
                     else:
                         turns.append((role, content))
+                        origins.append([message["source_id"]])
                 if ranges is not None:
                     dialogs = [value for _, value in turns]
                     if sum(map(len, dialogs)) > 200000:
                         raise ValueError("候选对话过长，请缩短所选片段")
                     candidates.append(dialogs)
+                    candidate_origins.append(
+                        [origins[i] + origins[i + 1] for i in range(0, len(origins), 2)]
+                    )
                 else:
                     for end in range(1, len(turns), 2):
                         start = max(0, end - 1 - context_rounds * 2)
                         candidates.append(
                             [value for _, value in turns[start : end + 1]]
                         )
+            if append:
+                existing = list(persona.begin_dialogs or [])
+                segments = normalize_preset_segments(
+                    existing, persona.begin_dialog_segments
+                )
+                covered = _preset_source_ids(
+                    conversation_id, messages, existing, segments
+                )
+                added = skipped = 0
+                for dialogs, origins in zip(candidates, candidate_origins):
+                    current = None
+                    for index, ids in enumerate(origins):
+                        pair = dialogs[index * 2 : index * 2 + 2]
+                        if set(ids) <= covered:
+                            skipped += 1
+                            current = None
+                            continue
+                        if set(ids) & covered:
+                            raise ValueError(
+                                "所选对话与已加入的消息部分重叠，请重新读取后选择"
+                            )
+                        if current is None:
+                            current = {
+                                "id": str(uuid4()),
+                                "start_pair": len(existing) // 2,
+                                "pair_count": 0,
+                                "source_title": conversation.title
+                                or conversation.user_id,
+                                "source_conversation_id": conversation_id,
+                                "source_messages": [],
+                            }
+                            segments.append(current)
+                        existing.extend(pair)
+                        current["pair_count"] += 1
+                        current["source_messages"].append(ids)
+                        covered.update(ids)
+                        added += 1
+                if added:
+                    await preset_budget(
+                        self.core_lifecycle, existing, segments=segments, enforce=True
+                    )
+                    persona.begin_dialogs = existing
+                    persona.begin_dialog_segments = segments
+                    persona.updated_at = datetime.now(timezone.utc)
+                    session.add(persona)
+                await session.commit()
+                if added:
+                    self.persona_mgr.personas = (
+                        await self.persona_mgr.get_all_personas()
+                    )
+                    self.persona_mgr.get_v3_persona_data()
+                return {"added": added, "skipped": skipped, "written": True}
             existing = set(
                 (
                     await session.execute(

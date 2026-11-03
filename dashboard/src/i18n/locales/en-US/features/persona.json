@@ -180,10 +180,10 @@
     "removed": "Removed",
     "unsaved": "Preset edits are unsaved. Leave this page?",
     "incompleteRange": "Each selected excerpt must end with an assistant reply. Adjust the selection.",
-    "savePresetsFirst": "Save your preset edits before approving examples.",
+    "savePresetsFirst": "Save preset edits before adding history messages.",
     "personaMissing": "Persona not found.",
     "saveAndOpen": "Save and open presets",
-    "title": "Review examples",
+    "title": "Preset dialogues",
     "create": "New candidate",
     "persona": "Target persona",
     "conversation": "Source conversation",
@@ -207,6 +207,14 @@
     "selectRound": "Select exchange",
     "capacity": "Context usage",
     "remaining": "Preset allowance remaining",
-    "overBudget": "Preset dialogues exceed the 15% limit. Reduce their size before saving."
+    "overBudget": "Preset dialogues exceed the 15% limit. Reduce their size before saving.",
+    "dateStart": "Start date",
+    "dateEnd": "End date",
+    "clearDateFilter": "Clear date filter",
+    "invalidDateRange": "End date must be on or after start date",
+    "unknownTime": "Time unknown",
+    "noHistoryMatches": "No history matches these dates",
+    "addPresets": "Add to presets",
+    "inPresets": "In presets"
   }
 }

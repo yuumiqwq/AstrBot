@@ -337,6 +337,7 @@ export type ExampleImport = {
     context_rounds?: number;
     revision?: (string | null);
     ranges?: (Array<HistoryRange> | null);
+    append?: boolean;
 };
 
 export type FileUploadRequest = {
@@ -667,6 +668,8 @@ export type PresetSegment = {
     pair_count: number;
     source_review_id?: (string | null);
     source_title?: string;
+    source_conversation_id?: (string | null);
+    source_messages?: (Array<Array<(string)>> | null);
 };
 
 export type PresetUpdate = {
@@ -872,6 +875,7 @@ export type EstimatePresetsApiV1PersonaExampleReviewsPresetsBudgetPostError = (E
 export type GetSourceHistoryApiV1PersonaExampleReviewsHistoryGetData = {
     query: {
         conversation_id: string;
+        persona_id?: string;
     };
 };
 

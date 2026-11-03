@@ -180,10 +180,10 @@
     "removed": "Удалено",
     "unsaved": "Изменения не сохранены. Покинуть страницу?",
     "incompleteRange": "Каждый фрагмент должен заканчиваться ответом ассистента. Измените выбор.",
-    "savePresetsFirst": "Сохраните изменения примеров перед одобрением.",
+    "savePresetsFirst": "Сохраните изменения примеров перед добавлением истории.",
     "personaMissing": "Персона не найдена.",
     "saveAndOpen": "Сохранить и открыть примеры",
-    "title": "Review examples",
+    "title": "Примеры диалогов",
     "create": "New candidate",
     "persona": "Target persona",
     "conversation": "Source conversation",
@@ -200,6 +200,14 @@
     "approve": "Approve and append",
     "cancel": "Cancel",
     "saved": "Saved",
-    "import": "Read conversation"
+    "import": "Read conversation",
+    "dateStart": "Дата начала",
+    "dateEnd": "Дата окончания",
+    "clearDateFilter": "Сбросить даты",
+    "invalidDateRange": "Дата окончания не может быть раньше начала",
+    "unknownTime": "Время неизвестно",
+    "noHistoryMatches": "Нет сообщений за выбранные даты",
+    "addPresets": "Добавить в примеры",
+    "inPresets": "Уже добавлено"
   }
 }

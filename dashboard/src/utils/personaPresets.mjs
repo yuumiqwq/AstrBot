@@ -4,10 +4,13 @@ export function removePresetPairs(dialogs, segments, pairIndexes) {
   const nextSegments = [];
   for (const segment of segments) {
     const startPair = nextDialogs.length / 2;
+    const origins = [];
     for (let offset = 0; offset < segment.pair_count; offset += 1) {
       const pair = segment.start_pair + offset;
-      if (!removed.has(pair))
+      if (!removed.has(pair)) {
         nextDialogs.push(...dialogs.slice(pair * 2, pair * 2 + 2));
+        if (segment.source_messages) origins.push(segment.source_messages[offset]);
+      }
     }
     const count = nextDialogs.length / 2 - startPair;
     if (count)
@@ -15,6 +18,7 @@ export function removePresetPairs(dialogs, segments, pairIndexes) {
         ...segment,
         start_pair: startPair,
         pair_count: count,
+        ...(segment.source_messages ? { source_messages: origins } : {}),
       });
   }
   return { begin_dialogs: nextDialogs, segments: nextSegments };

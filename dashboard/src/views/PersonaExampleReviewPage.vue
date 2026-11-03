@@ -205,6 +205,34 @@
             >{{ label("refresh") }}</v-btn
           >
         </div>
+        <div class="history-date-filter mt-4">
+          <v-text-field
+            v-model="dateStart"
+            type="date"
+            :label="label('dateStart')"
+            density="compact"
+            hide-details
+            clearable
+            :disabled="busy"
+          />
+          <v-text-field
+            v-model="dateEnd"
+            type="date"
+            :label="label('dateEnd')"
+            :min="dateStart || undefined"
+            :error-messages="dateRangeInvalid ? label('invalidDateRange') : []"
+            density="compact"
+            hide-details="auto"
+            clearable
+            :disabled="busy"
+          />
+          <v-btn
+            variant="text"
+            :disabled="busy || (!dateStart && !dateEnd)"
+            @click="dateStart = dateEnd = null"
+            >{{ label("clearDateFilter") }}</v-btn
+          >
+        </div>
         <div class="history-range mt-4">
           <v-autocomplete
             v-model="rangeStart"
@@ -235,7 +263,9 @@
       <div class="d-flex align-center ga-2 mb-4 flex-wrap">
         <v-btn
           variant="text"
-          :disabled="busy || !historyPage.length"
+          :disabled="
+            busy || !historyPage.some((message) => !message.in_presets)
+          "
           @click="selectHistoryPage"
           >{{ label("selectPage") }}</v-btn
         >
@@ -254,7 +284,7 @@
           variant="tonal"
           :disabled="busy || loading || !personaId || !historyRanges.length"
           @click="importSelectedHistory"
-          >{{ label("addPending") }}</v-btn
+          >{{ label("addPresets") }}</v-btn
         >
       </div>
       <v-card
@@ -262,6 +292,8 @@
         :key="message.index"
         variant="outlined"
         class="pa-4 mb-3 history-message"
+        :data-message-index="message.index"
+        :data-message-date="message.dateKey"
         :class="{ 'history-message-assistant': message.role === 'assistant' }"
       >
         <div class="selection-row">
@@ -272,7 +304,7 @@
             hide-details
             density="compact"
             class="selection-checkbox"
-            :disabled="busy"
+            :disabled="busy || message.in_presets"
             @update:model-value="
               updateSelection($event, message.index, 'history')
             "
@@ -280,7 +312,8 @@
           <v-btn
             v-if="
               historySelectionAnchor !== null &&
-              historySelectionAnchor !== message.index
+              historySelectionAnchor !== message.index &&
+              !message.in_presets
             "
             variant="text"
             size="small"
@@ -289,197 +322,32 @@
             >{{ label("selectToHere") }}</v-btn
           >
         </div>
+        <div class="message-meta">
+          <time :datetime="message.isoTime">{{ message.timeLabel }}</time>
+          <v-chip
+            v-if="message.in_presets"
+            size="small"
+            color="primary"
+            variant="tonal"
+            >{{ label("inPresets") }}</v-chip
+          >
+        </div>
         <div class="message-content">{{ message.content }}</div>
       </v-card>
+      <v-card
+        v-if="!loading && conversationId && !filteredHistoryMessages.length"
+        variant="outlined"
+        class="pa-4 history-empty"
+        >{{ label("noHistoryMatches") }}</v-card
+      >
       <v-pagination
-        v-if="historyMessages.length > historyPageSize"
+        v-if="filteredHistoryMessages.length > historyPageSize"
         v-model="historyPageNumber"
-        :length="Math.ceil(historyMessages.length / historyPageSize)"
+        :length="Math.ceil(filteredHistoryMessages.length / historyPageSize)"
         :disabled="busy"
       />
     </template>
 
-    <template v-else>
-      <div class="d-flex align-center ga-2 mb-4 flex-wrap">
-        <v-btn-toggle
-          v-if="state === 'processed'"
-          v-model="processedState"
-          mandatory
-          density="compact"
-          :disabled="busy"
-        >
-          <v-btn value="approved">{{ label("approved") }}</v-btn>
-          <v-btn value="rejected">{{ label("rejected") }}</v-btn>
-        </v-btn-toggle>
-        <v-spacer />
-        <v-btn
-          v-if="state === 'pending'"
-          variant="tonal"
-          :disabled="!personaId || busy"
-          @click="newCandidate = !newCandidate"
-          >{{ label("create") }}</v-btn
-        >
-        <v-btn
-          variant="text"
-          :disabled="busy || loading"
-          @click="loadReviews"
-          >{{ label("refresh") }}</v-btn
-        >
-      </div>
-      <v-card
-        v-if="newCandidate && state === 'pending'"
-        variant="outlined"
-        class="pa-4 mb-5"
-      >
-        <h2 class="text-h4 mb-4">{{ label("create") }}</h2>
-        <v-textarea
-          v-for="(_, index) in newDialogs"
-          :key="index"
-          v-model="newDialogs[index]"
-          :label="label(index % 2 ? 'assistant' : 'user')"
-          rows="2"
-          auto-grow
-          class="mb-2"
-          :disabled="busy"
-        />
-        <div class="d-flex ga-2 flex-wrap">
-          <v-btn
-            variant="text"
-            :disabled="busy"
-            @click="newDialogs.push('', '')"
-            >{{ label("addRound") }}</v-btn
-          >
-          <v-spacer />
-          <v-btn
-            variant="text"
-            :disabled="busy"
-            @click="newCandidate = false"
-            >{{ label("cancel") }}</v-btn
-          >
-          <v-btn
-            variant="tonal"
-            :disabled="busy || !validExampleDialogs(newDialogs)"
-            @click="saveNew"
-            >{{ label("save") }}</v-btn
-          >
-        </div>
-      </v-card>
-      <v-expansion-panels v-model="expandedReview" variant="accordion">
-        <v-expansion-panel
-          v-for="review in reviews"
-          :key="review.review_id"
-          :value="review.review_id"
-          class="mb-3 preset-segment"
-          elevation="0"
-        >
-          <v-expansion-panel-title>
-            <div class="d-flex align-center ga-3 flex-wrap">
-              <span>{{ review.source_title || review.persona_id }}</span>
-              <v-chip size="small">{{
-                label(
-                  review.state === "approved" && review.present === false
-                    ? "removed"
-                    : review.state,
-                )
-              }}</v-chip>
-              <span
-                >{{ review.begin_dialogs.length / 2 }}
-                {{ label("rounds") }}</span
-              >
-            </div>
-          </v-expansion-panel-title>
-          <v-expansion-panel-text>
-            <template
-              v-for="pair in visibleReviewPairs(review)"
-              :key="`${review.review_id}:${pair}`"
-            >
-              <v-textarea
-                v-model="review.begin_dialogs[pair * 2]"
-                :label="label('user')"
-                auto-grow
-                rows="2"
-                class="mb-3"
-                hide-details
-                :readonly="review.state !== 'pending'"
-                :disabled="busy"
-              />
-              <v-textarea
-                v-model="review.begin_dialogs[pair * 2 + 1]"
-                :label="label('assistant')"
-                auto-grow
-                rows="2"
-                class="mb-5"
-                hide-details
-                :readonly="review.state !== 'pending'"
-                :disabled="busy"
-              />
-            </template>
-            <v-pagination
-              v-if="review.begin_dialogs.length > pageSize * 2"
-              v-model="reviewPairPage"
-              :length="Math.ceil(review.begin_dialogs.length / (pageSize * 2))"
-              :disabled="busy"
-            />
-            <div
-              v-if="review.state === 'pending'"
-              class="d-flex ga-2 mt-4 flex-wrap"
-            >
-              <v-btn
-                variant="text"
-                :disabled="busy"
-                @click="
-                  review.begin_dialogs.push('', '');
-                  reviewPairPage = Math.ceil(
-                    review.begin_dialogs.length / (pageSize * 2),
-                  );
-                "
-                >{{ label("addRound") }}</v-btn
-              >
-              <v-btn
-                v-if="review.begin_dialogs.length > 2"
-                variant="text"
-                :disabled="busy"
-                @click="
-                  review.begin_dialogs.splice(-2);
-                  reviewPairPage = Math.min(
-                    reviewPairPage,
-                    Math.ceil(review.begin_dialogs.length / (pageSize * 2)),
-                  );
-                "
-                >{{ label("removeRound") }}</v-btn
-              >
-              <v-spacer />
-              <v-btn
-                variant="text"
-                :disabled="busy || !validExampleDialogs(review.begin_dialogs)"
-                @click="decide(review, 'save')"
-                >{{ label("save") }}</v-btn
-              >
-              <v-btn
-                variant="text"
-                color="error"
-                :disabled="busy || !validExampleDialogs(review.begin_dialogs)"
-                @click="decide(review, 'reject')"
-                >{{ label("reject") }}</v-btn
-              >
-              <v-btn
-                variant="tonal"
-                color="primary"
-                :disabled="busy || !validExampleDialogs(review.begin_dialogs)"
-                @click="decide(review, 'approve')"
-                >{{ label("approve") }}</v-btn
-              >
-            </div>
-          </v-expansion-panel-text>
-        </v-expansion-panel>
-      </v-expansion-panels>
-      <v-pagination
-        v-if="total > pageSize"
-        v-model="reviewPage"
-        :length="Math.ceil(total / pageSize)"
-        :disabled="busy"
-      />
-    </template>
     <v-btn
       v-if="showBackToTop"
       class="back-to-top"
@@ -512,27 +380,17 @@ import { askForConfirmation, useConfirmDialog } from "@/utils/confirmDialog";
 import {
   removePresetPairs,
   selectedHistoryRanges,
-  validExampleDialogs,
 } from "@/utils/personaPresets.mjs";
 
-type ReviewState = "pending" | "approved" | "rejected";
-type PageState = "presets" | "history" | "pending" | "processed";
+type PageState = "presets" | "history";
 interface Segment {
   id: string;
   start_pair: number;
   pair_count: number;
   source_title?: string;
   source_review_id?: string;
-}
-interface Review {
-  review_id: string;
-  persona_id: string;
-  source_title: string;
-  begin_dialogs: string[];
-  state: ReviewState;
-  revision: number;
-  present?: boolean;
-  live_segment_id?: string;
+  source_conversation_id?: string;
+  source_messages?: string[][];
 }
 interface Source {
   conversation_id: string;
@@ -544,6 +402,9 @@ interface HistoryMessage {
   index: number;
   role: "user" | "assistant";
   content: string;
+  sent_at?: number | null;
+  source_id?: string;
+  in_presets?: boolean;
 }
 interface Budget {
   context_tokens: number;
@@ -553,7 +414,7 @@ interface Budget {
   overhead_tokens?: number;
 }
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const label = (key: string) => t(`features.persona.review.${key}`);
 const endpoint = "/persona-example-reviews";
 const router = useRouter();
@@ -566,12 +427,10 @@ const routePersonaId = computed(() =>
     : undefined,
 );
 const confirmDialog = useConfirmDialog();
-const states: PageState[] = ["presets", "history", "pending", "processed"];
+const states: PageState[] = ["presets", "history"];
 const state = ref<PageState>(
   states.includes(route.query.tab as PageState)
     ? (route.query.tab as PageState)
-    : route.name === "PersonaExampleReview"
-    ? "pending"
     : "presets",
 );
 const personas = ref<{ persona_id: string }[]>([]);
@@ -635,33 +494,65 @@ const historyPageNumber = ref(1);
 const historyPageSize = 40;
 const rangeStart = ref<number | null>(null);
 const rangeEnd = ref<number | null>(null);
+const dateStart = ref<string | null>(null);
+const dateEnd = ref<string | null>(null);
+const dateRangeInvalid = computed(() =>
+  Boolean(dateStart.value && dateEnd.value && dateStart.value > dateEnd.value),
+);
+const datedHistoryMessages = computed(() =>
+  historyMessages.value.map((message) => {
+    const date =
+      typeof message.sent_at === "number" && message.sent_at > 0
+        ? new Date(message.sent_at * 1000)
+        : null;
+    const valid = date !== null && !Number.isNaN(date.getTime());
+    return {
+      ...message,
+      dateKey: valid
+        ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+            2,
+            "0",
+          )}-${String(date.getDate()).padStart(2, "0")}`
+        : "",
+      timeLabel: valid
+        ? date.toLocaleString(locale.value, { hour12: false })
+        : label("unknownTime"),
+      isoTime: valid ? date.toISOString() : undefined,
+    };
+  }),
+);
+const filteredHistoryMessages = computed(() => {
+  const start = dateStart.value || "",
+    end = dateEnd.value || "";
+  if (dateRangeInvalid.value) return [];
+  if (!start && !end) return datedHistoryMessages.value;
+  return datedHistoryMessages.value.filter(
+    (message) =>
+      message.dateKey &&
+      (!start || message.dateKey >= start) &&
+      (!end || message.dateKey <= end),
+  );
+});
 const historyPage = computed(() =>
-  historyMessages.value.slice(
+  filteredHistoryMessages.value.slice(
     (historyPageNumber.value - 1) * historyPageSize,
     historyPageNumber.value * historyPageSize,
   ),
 );
 const historyOptions = computed(() =>
-  historyMessages.value.map((message) => ({
-    index: message.index,
-    label: `${message.index + 1} · ${label(
-      message.role,
-    )} · ${message.content.slice(0, 48)}`,
-  })),
+  filteredHistoryMessages.value
+    .filter((message) => !message.in_presets)
+    .map((message) => ({
+      index: message.index,
+      label: `${message.index + 1} · ${message.timeLabel} · ${label(
+        message.role,
+      )} · ${message.content.slice(0, 48)}`,
+    })),
 );
 const historyRanges = computed(() =>
   selectedHistoryRanges(historyMessages.value, selectedHistory.value),
 );
 let historyRequest = 0;
-
-const reviews = ref<Review[]>([]);
-const reviewPage = ref(1);
-const total = ref(0);
-const processedState = ref<"approved" | "rejected">("approved");
-const expandedReview = ref<string>();
-const reviewPairPage = ref(1);
-const newCandidate = ref(false);
-const newDialogs = ref(["", ""]);
 
 function showNotice(error?: unknown) {
   noticeError.value = Boolean(error);
@@ -714,8 +605,13 @@ function selectToHere(index: number, scope: "presets" | "history") {
   const indexes =
     scope === "presets"
       ? Array.from({ length: end - start + 1 }, (_, offset) => start + offset)
-      : historyMessages.value
-          .filter((message) => message.index >= start && message.index <= end)
+      : filteredHistoryMessages.value
+          .filter(
+            (message) =>
+              !message.in_presets &&
+              message.index >= start &&
+              message.index <= end,
+          )
           .map((message) => message.index);
   selected.value = [...new Set([...selected.value, ...indexes])];
   if (scope === "history") {
@@ -737,15 +633,6 @@ function scrollToTop() {
       ? "auto"
       : "smooth",
   });
-}
-function visibleReviewPairs(review: Review) {
-  return Array.from(
-    { length: review.begin_dialogs.length / 2 },
-    (_, index) => index,
-  ).slice(
-    (reviewPairPage.value - 1) * pageSize,
-    reviewPairPage.value * pageSize,
-  );
 }
 function acceptPresets(data: {
   begin_dialogs: string[];
@@ -859,7 +746,10 @@ async function loadHistory() {
   loading.value = true;
   try {
     const response = await apiV1Client.get(`${endpoint}/history`, {
-      params: { conversation_id: conversationId.value },
+      params: {
+        conversation_id: conversationId.value,
+        persona_id: personaId.value,
+      },
     });
     if (request !== historyRequest) return;
     historyMessages.value = response.data.data.messages;
@@ -878,8 +768,13 @@ function selectRange() {
   selectedHistory.value = [
     ...new Set([
       ...selectedHistory.value,
-      ...historyMessages.value
-        .filter((message) => message.index >= start && message.index <= end)
+      ...filteredHistoryMessages.value
+        .filter(
+          (message) =>
+            !message.in_presets &&
+            message.index >= start &&
+            message.index <= end,
+        )
         .map((message) => message.index),
     ]),
   ];
@@ -888,12 +783,19 @@ function selectHistoryPage() {
   selectedHistory.value = [
     ...new Set([
       ...selectedHistory.value,
-      ...historyPage.value.map((message) => message.index),
+      ...historyPage.value
+        .filter((message) => !message.in_presets)
+        .map((message) => message.index),
     ]),
   ];
-  historySelectionAnchor.value ??= historyPage.value[0]?.index ?? null;
+  historySelectionAnchor.value ??=
+    historyPage.value.find((message) => !message.in_presets)?.index ?? null;
 }
 async function importSelectedHistory() {
+  if (presetDirty.value) {
+    showNotice(new Error(label("savePresetsFirst")));
+    return;
+  }
   const messages = new Map(
     historyMessages.value.map((message) => [message.index, message]),
   );
@@ -912,77 +814,12 @@ async function importSelectedHistory() {
       conversation_id: conversationId.value,
       revision: historyRevision.value,
       ranges: historyRanges.value,
+      append: true,
     });
     clearHistorySelection();
-    reviewPage.value = 1;
-    state.value = "pending";
-    showNotice();
-  } catch (error) {
-    showNotice(error);
-  } finally {
-    busy.value = false;
-  }
-}
-async function loadReviews() {
-  const request = ++viewRequest;
-  loading.value = true;
-  try {
-    const response = await apiV1Client.get(endpoint, {
-      params: {
-        persona_id: personaId.value,
-        state: state.value === "processed" ? processedState.value : "pending",
-        page: reviewPage.value,
-      },
-    });
-    if (request !== viewRequest) return;
-    reviews.value = response.data.data.items;
-    total.value = response.data.data.total;
-    if (
-      !reviews.value.some((review) => review.review_id === expandedReview.value)
-    )
-      expandedReview.value = reviews.value[0]?.review_id;
-    reviewPairPage.value = 1;
-  } catch (error) {
-    if (request === viewRequest) showNotice(error);
-  } finally {
-    if (request === viewRequest) loading.value = false;
-  }
-}
-async function saveNew() {
-  busy.value = true;
-  try {
-    await apiV1Client.post(endpoint, {
-      persona_id: personaId.value,
-      begin_dialogs: newDialogs.value,
-    });
-    newCandidate.value = false;
-    newDialogs.value = ["", ""];
-    reviewPage.value = 1;
-    await loadReviews();
-    showNotice();
-  } catch (error) {
-    showNotice(error);
-  } finally {
-    busy.value = false;
-  }
-}
-async function decide(review: Review, action: "save" | "approve" | "reject") {
-  if (action === "approve" && presetDirty.value) {
-    showNotice(new Error(label("savePresetsFirst")));
-    return;
-  }
-  busy.value = true;
-  try {
-    const response = await apiV1Client.put(`${endpoint}/${review.review_id}`, {
-      revision: review.revision,
-      begin_dialogs: review.begin_dialogs,
-      action,
-    });
-    if (action === "save") Object.assign(review, response.data.data);
-    else {
-      if (action === "approve") loadedPersona.value = "";
-      await loadReviews();
-    }
+    loadedPersona.value = "";
+    await loadHistory();
+    window.dispatchEvent(new CustomEvent("astrbot:persona-saved"));
     showNotice();
   } catch (error) {
     showNotice(error);
@@ -998,7 +835,6 @@ async function loadCurrent() {
     if (loadedPersona.value !== personaId.value) await loadPresets();
     else loading.value = false;
   } else if (state.value === "history") await loadHistory();
-  else await loadReviews();
 }
 async function selectPersona(id: string) {
   await router.push({
@@ -1020,22 +856,16 @@ watch(expandedSegment, () => {
   selectedPairs.value = [];
   pairSelectionAnchor.value = null;
 });
-watch(expandedReview, () => {
-  reviewPairPage.value = 1;
+watch([dateStart, dateEnd], () => {
+  clearHistorySelection();
+  rangeStart.value = rangeEnd.value = null;
+  historyPageNumber.value = 1;
 });
 watch(conversationId, () => {
   if (initialized.value && state.value === "history") void loadHistory();
 });
-watch([reviewPage, processedState], () => {
-  if (
-    initialized.value &&
-    (state.value === "pending" || state.value === "processed")
-  )
-    void loadReviews();
-});
 watch(state, () => {
   if (!initialized.value) return;
-  reviewPage.value = 1;
   void router.replace({ query: { ...route.query, tab: state.value } });
   void loadCurrent();
 });
@@ -1054,7 +884,6 @@ watch(routePersonaId, async (value) => {
   presetDialogs.value = [];
   segments.value = [];
   presetBudget.value = null;
-  newCandidate.value = false;
   await loadCurrent();
 });
 onBeforeRouteLeave(async () => !busy.value && (await confirmDiscard()));
@@ -1100,7 +929,10 @@ onMounted(async () => {
       throw new Error(label("personaMissing"));
     personaId.value = selected;
     conversationId.value = sources.value[0]?.conversation_id || "";
-    if (!route.query.personaId)
+    if (
+      !route.query.personaId ||
+      !states.includes(route.query.tab as PageState)
+    )
       await router.replace({
         name: "PersonaExampleReview",
         query: { personaId: selected, tab: state.value },
@@ -1131,11 +963,24 @@ onMounted(async () => {
   gap: 16px;
   align-items: center;
 }
+.history-date-filter,
 .history-range {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 16px;
   align-items: center;
+}
+.history-date-filter {
+  align-items: start;
+}
+.message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-left: 40px;
+  color: rgba(var(--v-theme-on-surface), 0.65);
+  font-size: 0.8rem;
 }
 .preset-segment {
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
@@ -1183,10 +1028,12 @@ onMounted(async () => {
   .persona-select {
     flex: 1 1 100%;
   }
+  .history-date-filter,
   .history-range {
     grid-template-columns: minmax(0, 1fr);
   }
-  .message-content {
+  .message-content,
+  .message-meta {
     padding-left: 0;
   }
 }

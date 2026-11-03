@@ -48,19 +48,17 @@ The Usage sidebar order is WebUI, AstrBot CLI, Built-in Commands, Plugins, AstrB
 | Usage → Agent Runner | Usage → Agent Execution Mode (URL unchanged) |
 | Usage → CLI Commands | Usage → AstrBot CLI (URL unchanged) |
 
-## Review Examples
+## Preset Dialogues
 
-![Review examples](../images/persona-example-review.png)
+![History messages and date filtering](../images/persona-example-review.png)
 
-The **Review examples** sidebar entry adds complete dialogue examples to a persona's preset conversation. Select a target persona and an existing conversation, choose how many preceding exchanges each candidate should retain, then select **Read conversation**. Use **New candidate** to enter an example manually.
+The former **Review examples** sidebar entry is now **Preset dialogues**, with only the **Preset dialogues** and **History** tabs. The persona editor's header opens this same page with the current persona selected. Previous standalone preset URLs still redirect here.
 
-You can edit both sides of each candidate. **Save** updates the pending candidate; **Approve and append** adds it to the selected persona's presets while retaining existing examples. Repeating an approval does not append the same candidate again. Rejected candidates remain available in the **Rejected** tab. Reading and reviewing examples do not call a language model.
+In **History**, select a source conversation and optionally filter by start and end dates. The end date includes the entire day; clearing the dates restores all history. Each message displays its original send time. Records without a timestamp display **Time unknown** and appear only when no date filter is active. Select messages and use **Add to presets** to write directly into the persona, without a pending queue or a processed tab.
 
-The **Preset dialogues** tab shows all examples currently used by the persona, including direct imports and approved candidates. Edit either side, delete one exchange, or select several exchanges and use **Delete selected**, then select **Save**. Pagination preserves unsaved edits. Saving checks the content revision so concurrent edits or approvals are not overwritten. The approved tab retains review records; **Preset dialogues** represents the examples currently in use.
+Messages already in the current persona's presets show an **In presets** tag and cannot be selected again. Edit or delete exchanges or whole excerpts in **Preset dialogues**, save, and return to history to see the updated tags. Pagination preserves unsaved edits. Revision checks prevent concurrent changes from being overwritten.
 
-The **Preset dialogues** entry has moved from below the capabilities area to the persona editor's header. In **History**, check a starting message, scroll or change pages, and select **Select to here** beside the ending message to select the inclusive range while preserving other selections. Existing presets support the same action for exchanges within one excerpt. After scrolling, **Back to top** appears in the lower-right corner of the management page.
-
-The persona entry opens the existing **Review examples** page with that persona and the **Preset dialogues** tab selected. Both entry points share one page, and previous standalone preset URLs redirect here.
+Check a starting message, scroll or change pages, then use **Select to here** beside the ending message to include the unadded messages between those points in the current date filter while retaining other selections. Changing dates clears the selection. Presets support the same range action within an excerpt. **Back to top** appears after scrolling.
 
 ![Preset entry in the persona editor header](../images/persona-preset-entry.png)
 
@@ -68,7 +66,7 @@ The persona entry opens the existing **Review examples** page with that persona 
 
 ![Preset dialogue management](../images/persona-preset-management.png)
 
-The page displays estimated token usage against the current default chat model's context capacity, with a 15% preset limit. Capacity follows the provider configuration, model metadata, or the configured context-compression fallback. Approval, preset editing, and the original persona create/update APIs enforce the combined allowance before writing. Oversized candidates remain pending, and the saved persona remains unchanged.
+The page displays estimated token usage against the current default chat model's context capacity, with a 15% preset limit. Direct history imports, preset editing, and the original persona create/update APIs check the combined allowance before writing. Oversized imports retain existing content and report the limit. Reading and adding history do not call a language model.
 
 ## Accessing the Admin Panel
 
