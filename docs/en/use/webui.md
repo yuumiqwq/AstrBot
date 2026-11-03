@@ -52,7 +52,7 @@ The Usage sidebar order is WebUI, AstrBot CLI, Built-in Commands, Plugins, AstrB
 
 ![History messages and date filtering](../images/persona-example-review.png)
 
-The former **Review examples** sidebar entry is now **Preset dialogues**, with only the **Preset dialogues** and **History** tabs. The persona editor's header opens this same page with the current persona selected. Previous standalone preset URLs still redirect here.
+The former **Review examples** sidebar entry is now **Preset dialogues** (Chinese: **预设对话管理**), with only the **Preset dialogues** and **History** tabs. The persona editor's header opens this same page with the current persona selected. Previous standalone preset URLs still redirect here.
 
 In **History**, select a source conversation and optionally filter by start and end dates. The end date includes the entire day; clearing the dates restores all history. Each message displays its original send time. Records without a timestamp display **Time unknown** and appear only when no date filter is active. Select messages and use **Add to presets** to write directly into the persona, without a pending queue or a processed tab.
 
