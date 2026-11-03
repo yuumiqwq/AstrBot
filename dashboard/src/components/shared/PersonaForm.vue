@@ -290,8 +290,8 @@ async function savePersona(goToPresets = false) {
       closeDialog();
       if (goToPresets)
         await router.push({
-          name: "PersonaPresets",
-          params: { personaId: personaForm.persona_id },
+          name: "PersonaExampleReview",
+          query: { personaId: personaForm.persona_id, tab: "presets" },
         });
     } else {
       emit("error", response.data?.message || tm("messages.saveError"));
@@ -339,8 +339,8 @@ async function openPresets() {
   }
   closeDialog();
   await router.push({
-    name: "PersonaPresets",
-    params: { personaId: props.editingPersona.persona_id },
+    name: "PersonaExampleReview",
+    query: { personaId: props.editingPersona.persona_id, tab: "presets" },
   });
 }
 

@@ -60,6 +60,8 @@ The **Preset dialogues** tab shows all examples currently used by the persona, i
 
 The **Preset dialogues** entry has moved from below the capabilities area to the persona editor's header. In **History**, check a starting message, scroll or change pages, and select **Select to here** beside the ending message to select the inclusive range while preserving other selections. Existing presets support the same action for exchanges within one excerpt. After scrolling, **Back to top** appears in the lower-right corner of the management page.
 
+The persona entry opens the existing **Review examples** page with that persona and the **Preset dialogues** tab selected. Both entry points share one page, and previous standalone preset URLs redirect here.
+
 ![Preset entry in the persona editor header](../images/persona-preset-entry.png)
 
 ![Select a continuous history range](../images/persona-select-to-here.png)

@@ -174,7 +174,10 @@ const MainRoutes = {
     {
       name: 'PersonaPresets',
       path: '/persona/:personaId/presets',
-      component: () => import('@/views/PersonaExampleReviewPage.vue')
+      redirect: (to: RouteLocationNormalized) => ({
+        name: 'PersonaExampleReview',
+        query: { ...to.query, personaId: String(to.params.personaId), tab: to.query.tab || 'presets' }
+      })
     },
     {
       name: 'Persona',

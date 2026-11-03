@@ -8,7 +8,7 @@
           @click="returnToPersona"
           >{{ label("back") }}</v-btn
         >
-        <h1 class="text-h3">{{ label("presets") }}</h1>
+        <h1 class="text-h3">{{ label("title") }}</h1>
       </div>
       <v-select
         :model-value="personaId"
@@ -558,6 +558,13 @@ const label = (key: string) => t(`features.persona.review.${key}`);
 const endpoint = "/persona-example-reviews";
 const router = useRouter();
 const route = useRoute();
+const routePersonaId = computed(() =>
+  typeof route.query.personaId === "string"
+    ? route.query.personaId
+    : typeof route.params.personaId === "string"
+    ? route.params.personaId
+    : undefined,
+);
 const confirmDialog = useConfirmDialog();
 const states: PageState[] = ["presets", "history", "pending", "processed"];
 const state = ref<PageState>(
@@ -995,9 +1002,8 @@ async function loadCurrent() {
 }
 async function selectPersona(id: string) {
   await router.push({
-    name: "PersonaPresets",
-    params: { personaId: id },
-    query: { tab: state.value },
+    name: "PersonaExampleReview",
+    query: { personaId: id, tab: state.value },
   });
 }
 async function returnToPersona() {
@@ -1033,31 +1039,28 @@ watch(state, () => {
   void router.replace({ query: { ...route.query, tab: state.value } });
   void loadCurrent();
 });
-watch(
-  () => route.params.personaId,
-  async (value) => {
-    if (
-      !initialized.value ||
-      typeof value !== "string" ||
-      value === personaId.value
-    )
-      return;
-    personaId.value = value;
-    budgetRequest++;
-    clearTimeout(budgetTimer);
-    presetSnapshot.value = "";
-    loadedPersona.value = "";
-    presetDialogs.value = [];
-    segments.value = [];
-    presetBudget.value = null;
-    newCandidate.value = false;
-    await loadCurrent();
-  },
-);
+watch(routePersonaId, async (value) => {
+  if (
+    !initialized.value ||
+    typeof value !== "string" ||
+    value === personaId.value
+  )
+    return;
+  personaId.value = value;
+  budgetRequest++;
+  clearTimeout(budgetTimer);
+  presetSnapshot.value = "";
+  loadedPersona.value = "";
+  presetDialogs.value = [];
+  segments.value = [];
+  presetBudget.value = null;
+  newCandidate.value = false;
+  await loadCurrent();
+});
 onBeforeRouteLeave(async () => !busy.value && (await confirmDiscard()));
 onBeforeRouteUpdate(
   async (to, from) =>
-    to.params.personaId === from.params.personaId ||
+    to.query.personaId === from.query.personaId ||
     (!busy.value && (await confirmDiscard())),
 );
 onBeforeUnmount(() => {
@@ -1087,22 +1090,20 @@ onMounted(async () => {
         ? `${source.title} · ${source.user_id}`
         : source.user_id,
     }));
-    const selected =
-      typeof route.params.personaId === "string"
-        ? route.params.personaId
-        : personas.value.find((persona) => persona.persona_id !== "default")
-            ?.persona_id ||
-          personas.value[0]?.persona_id ||
-          "";
+    const selected = routePersonaId.value
+      ? routePersonaId.value
+      : personas.value.find((persona) => persona.persona_id !== "default")
+          ?.persona_id ||
+        personas.value[0]?.persona_id ||
+        "";
     if (!personas.value.some((persona) => persona.persona_id === selected))
       throw new Error(label("personaMissing"));
     personaId.value = selected;
     conversationId.value = sources.value[0]?.conversation_id || "";
-    if (!route.params.personaId)
+    if (!route.query.personaId)
       await router.replace({
-        name: "PersonaPresets",
-        params: { personaId: selected },
-        query: { tab: state.value },
+        name: "PersonaExampleReview",
+        query: { personaId: selected, tab: state.value },
       });
     initialized.value = true;
     await loadCurrent();
