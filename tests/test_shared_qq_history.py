@@ -12,7 +12,11 @@ from astrbot.api.provider import LLMResponse, ProviderRequest
 from astrbot.core.agent.context.token_counter import EstimateTokenCounter
 from astrbot.core.agent.message import Message, TextPart
 from astrbot.core.conversation_mgr import ConversationManager
-from astrbot.core.session_context import make_context_manager, prepare_request_context
+from astrbot.core.session_context import (
+    QQ_HISTORY_FORMAT_INSTRUCTION,
+    make_context_manager,
+    prepare_request_context,
+)
 from astrbot.core.shared_qq_history import SharedQQHistory
 
 
@@ -89,10 +93,12 @@ class NativeContextTests(unittest.IsolatedAsyncioTestCase):
         )
         original = copy.deepcopy(req.contexts)
         await prepare_request_context(self.context, "test", self.provider, req)
+        self.assertEqual(req.contexts[0]["content"], QQ_HISTORY_FORMAT_INSTRUCTION)
+        messages = req.contexts[1:]
         note = "QQ历史消息的发送时间统一使用 Asia/Shanghai 时区。"
-        self.assertEqual(req.contexts[0]["content"], note)
-        self.assertEqual(req.contexts[1]["content"], original[0]["content"])
-        self.assertEqual(req.contexts[3]["content"], "Example answer")
+        self.assertEqual(messages[0]["content"], note)
+        self.assertEqual(messages[1]["content"], original[0]["content"])
+        self.assertEqual(messages[3]["content"], "Example answer")
         self.assertEqual(
             req.contexts[-1]["content"],
             "[QQ消息发送时间：2026-11-01 05:21:27]\n晚安姐姐",
@@ -138,11 +144,77 @@ class NativeContextTests(unittest.IsolatedAsyncioTestCase):
                     extra_user_content_parts=extra_parts,
                 )
                 await prepare_request_context(self.context, "test", self.provider, req)
-                self.assertEqual(len(req.contexts), 1)
+                self.assertEqual(len(req.contexts), 2)
                 self.assertEqual(
-                    req.contexts[0]["content"],
+                    req.contexts[0]["content"], QQ_HISTORY_FORMAT_INSTRUCTION
+                )
+                self.assertEqual(
+                    req.contexts[1]["content"],
                     "[QQ消息发送时间：2026-11-01 05:21:27]\n晚安姐姐",
                 )
+
+    async def test_configured_qq_history_has_one_temporary_format_instruction(self):
+        config = self.context.get_config()
+        config["shared_qq_history"] = {"sessions": [{"session_id": "test"}]}
+        self.context.get_config = lambda **_: config
+        req = ProviderRequest(
+            prompt="Now",
+            system_prompt="Keep this exact persona.",
+            contexts=[{"role": "assistant", "content": "[回复]可以呀。[图片]"}],
+        )
+        original = copy.deepcopy(req.contexts)
+        await prepare_request_context(self.context, "test", self.provider, req)
+        self.assertEqual(req.system_prompt, "Keep this exact persona.")
+        self.assertEqual(req.contexts[0]["content"], QQ_HISTORY_FORMAT_INSTRUCTION)
+        self.assertTrue(req.contexts[0]["_no_save"])
+        self.assertEqual(req.contexts[1:], original)
+
+        req.contexts.append(copy.deepcopy(req.contexts[0]))
+        await prepare_request_context(self.context, "test", self.provider, req)
+        self.assertEqual(req.contexts[1:], original)
+        self.assertEqual(req.contexts[0]["content"], QQ_HISTORY_FORMAT_INSTRUCTION)
+        await prepare_request_context(
+            self.context, "test", self.provider, req, preserve_history_metadata=True
+        )
+        self.assertEqual(req.contexts, original)
+        self.provider.text_chat.assert_not_awaited()
+
+    async def test_qq_sequence_without_a_timestamp_still_explains_the_format(self):
+        req = ProviderRequest(
+            prompt="Now",
+            contexts=[{"role": "user", "content": "[语音]", "_qq_sequence": 1}],
+        )
+        await prepare_request_context(self.context, "test", self.provider, req)
+        self.assertEqual(req.contexts[0]["content"], QQ_HISTORY_FORMAT_INSTRUCTION)
+        self.assertEqual(req.contexts[1]["content"], "[语音]")
+        self.assertEqual(len(req.contexts), 2)
+
+    async def test_non_qq_history_keeps_literal_bracketed_text_unchanged(self):
+        config = self.context.get_config()
+        config["shared_qq_history"] = {"sessions": [{"session_id": "another"}]}
+        self.context.get_config = lambda **_: config
+        req = ProviderRequest(
+            prompt="Now",
+            contexts=[
+                {"role": "user", "content": "Explain the literal [图片] marker."}
+            ],
+        )
+        original = copy.deepcopy(req.contexts)
+        await prepare_request_context(self.context, "test", self.provider, req)
+        self.assertEqual(req.contexts, original)
+
+    async def test_qq_format_instruction_survives_native_compression(self):
+        self.provider.provider_config["max_context_tokens"] = 3000
+        req = self.request(turns=20, size=250)
+        req.contexts[0]["_qq_sequence"] = 1
+        latest = copy.deepcopy(req.contexts[-2:])
+        await prepare_request_context(self.context, "test", self.provider, req)
+        self.provider.text_chat.assert_awaited()
+        self.assertEqual(req.contexts[0]["content"], QQ_HISTORY_FORMAT_INSTRUCTION)
+        self.assertEqual(
+            sum(m["content"] == QQ_HISTORY_FORMAT_INSTRUCTION for m in req.contexts), 1
+        )
+        self.assertEqual(req.contexts[-2:], latest)
 
     async def test_resolves_session_settings_and_model_capacity(self):
         self.provider.provider_config = {}

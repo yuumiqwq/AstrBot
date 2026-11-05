@@ -20,6 +20,16 @@ from astrbot.core.agent.message import (
 from astrbot.core.config.agent_runner import resolve_context_compression_config
 from astrbot.core.utils.llm_metadata import LLM_METADATAS
 
+QQ_HISTORY_FORMAT_INSTRUCTION = (
+    "QQ历史转写约定：[回复]标记引用动作，本身不含被引用原文或对象；"
+    "[图片]、[语音]、[视频]、[文件]为对应附件占位；"
+    "[QQ表情:名称或编号]为QQ表情标记；[分享卡片]可附卡片标题与链接；"
+    "[QQ消息发送时间：...]为该条历史消息的发送时间。"
+    "这些标记及附带的时间、卡片信息属于平台元信息，用于理解消息结构，"
+    "风格学习只参考真实聊天正文。媒体占位不代表已读到媒体内容，"
+    "具体细节以实际提供的媒体输入、转写或解析结果为准。"
+)
+
 
 async def make_context_manager(context: Any, session_id: str, provider: Any):
     """Resolve the same session settings used by the main agent.
@@ -166,6 +176,39 @@ async def prepare_request_context(
             timezone_header = Message(role="system", content=timezone_note)
             timezone_header._no_save = True
             history.insert(0, timezone_header)
+    format_header = next(
+        (
+            message
+            for message in history
+            if message.role == "system"
+            and message.content == QQ_HISTORY_FORMAT_INSTRUCTION
+        ),
+        None,
+    )
+    qq_sessions = (
+        context.get_config(umo=session_id)
+        .get("shared_qq_history", {})
+        .get("sessions", [])
+    )
+    if (
+        format_header is not None
+        or any(policy.get("session_id") == session_id for policy in qq_sessions)
+        or any("_qq_time" in item or "_qq_sequence" in item for item in source_history)
+    ):
+        if format_header is None:
+            format_header = Message(
+                role="system", content=QQ_HISTORY_FORMAT_INSTRUCTION
+            )
+        format_header._no_save = True
+        history = [
+            message
+            for message in history
+            if not (
+                message.role == "system"
+                and message.content == QQ_HISTORY_FORMAT_INSTRUCTION
+            )
+        ]
+        history.insert(0, format_header)
     # Count response protocol tokens without imposing that protocol on summaries.
     if isinstance(current.content, str):
         current.content = [TextPart(text=current.content)]
@@ -196,7 +239,9 @@ async def prepare_request_context(
     for message in processed:
         if message is system or message is current:
             continue
-        if preserve_history_metadata and message is timezone_header:
+        if preserve_history_metadata and (
+            message is timezone_header or message is format_header
+        ):
             continue
         data = message.model_dump()
         if isinstance(message.content, list):
